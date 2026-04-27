@@ -1,0 +1,42 @@
+# --- Secrets (NEVER commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+.secrets/
+credentials*
+
+# --- Python build / runtime ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Virtual envs ---
+.venv/
+venv/
+env/
+
+# --- Generated images sandbox (per NANO_BANANA_OUTPUT_DIR) ---
+.nano_banana_output/
+nano_banana_output/
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+*~
+
+# --- Logs ---
+*.log
+logs/
