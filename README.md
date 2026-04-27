@@ -21,7 +21,7 @@ below).
 | `GEMINI_API_KEY` | yes | — |
 | `NANO_BANANA_DEFAULT_MODEL` | no | `gemini-3-pro-image-preview` |
 | `NANO_BANANA_OUTPUT_DIR` | no | `~/Documents/Development/.nano_banana_output` |
-| `NANO_BANANA_DEFAULT_SIZE` | no | `1024` |
+| `NANO_BANANA_DEFAULT_SIZE` | no | `1280` |
 | `NANO_BANANA_DEFAULT_FORMAT` | no | `webp` |
 | `NANO_BANANA_DEFAULT_QUALITY` | no | `75` |
 
@@ -44,9 +44,27 @@ Gemini returns 1024-2048px PNGs (or 4K for the Flash model). For email
 processing in the MCP keeps the rest of the pipeline simple — callers
 get a tiny WebP they can drop straight into a `<img src>` and ship.
 
-A 4K source PNG (~28 KB for solid color, **1-3 MB for photographic content**)
-becomes a 1024 WebP at quality 75 in the **30-50 KB range** for hero email
-images. ~95% size reduction, visually indistinguishable in any email client.
+A 4K source PNG (1-3 MB for photographic content) becomes a 1280 WebP
+at quality 75 in the **30-50 KB range** for hero email images. ~95% size
+reduction, visually indistinguishable in any email client, retina-sharp
+on iPhone Pro Max.
+
+### Pricing matters — the size you pick determines the bill
+
+Gemini 3 Pro Image bills by output resolution (verified 2026-04-27):
+
+| Output max side | Gemini cost / image | Use when |
+|---|---|---|
+| ≤1024 | **$0.039** | prototyping, MMS, anywhere a slight retina softness is fine |
+| 1024-2048 | **$0.134** (3.4× more) | **email hero (1280) — the default** |
+| up to 4K | $0.240 (6.2× more) | print, oversized landing-page hero |
+
+Default is **1280** because every email client downscales to ~600px and
+exporting at 2× display width (1280) is the retina-sharp sweet spot.
+Gemini bills 1280 in the same tier as 2048 — going below 1280 saves
+tokens but loses sharpness; going above 1280 just wastes money. 4K is
+reserved for legitimate high-res use (print, large landing-page hero),
+not email.
 
 ### `target_size`
 
@@ -58,10 +76,12 @@ downscaled, never upscaled (we never add detail that isn't in the source).
 | `256` | 256×256 max — thumbnails, avatars |
 | `512` | 512×512 max — small product cards |
 | `640` | 640×640 max — MMS-friendly |
-| `1024` *(default)* | 1024×1024 max — email hero, social, mobile-first web |
+| `1024` | 1024×1024 max — cheap-tier billing, slight retina softness in email |
+| `1120` | 1120×1120 max — inline body image (560 display × 2 retina) |
+| `1280` *(default)* | 1280×1280 max — **email hero (640 display × 2 retina), the right size for 99% of email use cases** |
 | `2048` / `2k` | 2048×2048 max — desktop hero, print preview |
 | `4k` | 3840×3840 max — print, billboard, "show me everything" |
-| `WIDTHxHEIGHT` | exact custom max (e.g. `600x300` for a 2:1 hero strip) |
+| `WIDTHxHEIGHT` | exact custom max (e.g. `1280x640` for a 2:1 retina hero strip) |
 | `off` | passthrough — keep raw model PNG, no resize, no re-encode |
 
 ### `output_format`
