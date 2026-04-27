@@ -43,14 +43,24 @@ DEFAULT_MODEL = os.environ.get(
 )
 
 # Sensible defaults for output post-processing. Optimized for email + mobile:
-# small file, broadly compatible, fast load.
+# small file, retina-sharp, fast load, never above the Gemini 1024-2048 tier.
 #
-# Why 1024 default and not 4K: nearly every email client + mobile browser
-# downscales hero images to 600-1200px wide anyway. A 4K original costs more
-# storage, more bandwidth, and more Gemini quota for zero rendered benefit.
+# Why 1280 default (not 1024 and not 4K):
+#   Gemini 3 Pro Image pricing as of 2026:
+#     ≤1024×1024  = $0.039 per image (325 tokens)
+#     1024-2048   = $0.134 per image (1,120 tokens)
+#     up to 4K    = $0.240 per image (2,000 tokens)
+#   Email + web research consensus: a hero image displayed at 600px should
+#   be exported at ~1200-1280 wide (2× display width for retina sharpness on
+#   iPhone Pro Max @ 1290 actual pixels). 1024 is just under the retina
+#   sweet spot; 2048+ is wasted because every email client downscales.
+#   Verdict: 1280 is the right place — sharp on retina, same pricing tier
+#   as 2048 so we lose nothing by going to the high end of the cheap-ish
+#   tier. Drop to 1024 if cost is the priority (~3.4× savings) and a slight
+#   retina softness is acceptable.
 # Override per-call via target_size when high-res is genuinely needed
-# (print, hero on a desktop landing page, infographic export).
-DEFAULT_TARGET_SIZE = os.environ.get("NANO_BANANA_DEFAULT_SIZE", "1024")
+# (print, oversized landing-page hero, infographic export).
+DEFAULT_TARGET_SIZE = os.environ.get("NANO_BANANA_DEFAULT_SIZE", "1280")
 
 # Why WebP default: 25-35% smaller than JPEG at the same visual quality, lossless
 # alpha, supported in every modern email client (Gmail/Apple/Outlook web/iOS/
@@ -74,8 +84,10 @@ SIZE_PRESETS: dict[str, tuple[int, int]] = {
     "256": (256, 256),
     "512": (512, 512),
     "640": (640, 640),
-    "1024": (1024, 1024),
+    "1024": (1024, 1024),  # cheap tier ($0.039)
     "1k": (1024, 1024),
+    "1120": (1120, 1120),  # 2× of inline-email body width (560)
+    "1280": (1280, 1280),  # 2× of standard email hero (640) — DEFAULT
     "2048": (2048, 2048),
     "2k": (2048, 2048),
     "4k": (3840, 3840),
