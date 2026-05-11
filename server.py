@@ -112,6 +112,27 @@ MIME_BY_SUFFIX = {
     ".gif": "image/gif",
 }
 
+REFERENCE_PROFILES: dict[str, dict[str, object]] = {
+    "botspot_spot": {
+        "description": "BotSpot/Lumibot Spot mascot reference images and brand guardrails.",
+        "images": [
+            "/Users/robertgrzesik/Development/brand-assets/botspot/botspot_mascot_rgba.png",
+            "/Users/robertgrzesik/Development/brand-assets/botspot/botspot_mascot_transparent_ready.png",
+        ],
+        "prompt_suffix": (
+            "\n\nReference profile: BotSpot Spot mascot. Use the attached Spot "
+            "reference images as the canonical character. Preserve the white/silver "
+            "robot body, orange goggle eyes, teal joints/accent details, friendly "
+            "mischievous expression, and core proportions. Place Spot doing an "
+            "action that is relevant to the requested topic instead of standing as "
+            "generic decoration. Do not show Spot giving investment advice or "
+            "guaranteeing trading performance."
+        ),
+    },
+    "spot": {"alias_for": "botspot_spot"},
+    "botspot": {"alias_for": "botspot_spot"},
+}
+
 
 def _api_key() -> str:
     key = os.environ.get("GEMINI_API_KEY")
@@ -252,6 +273,21 @@ def _read_reference_image(path_str: str) -> types.Part:
     return types.Part.from_bytes(data=data, mime_type=mime)
 
 
+def _resolve_reference_profile(name: str | None) -> tuple[list[str], str]:
+    if not name:
+        return [], ""
+    profile = REFERENCE_PROFILES.get(name)
+    if not profile:
+        allowed = sorted(REFERENCE_PROFILES)
+        raise ValueError(f"Unknown reference_profile {name!r}. Allowed: {allowed}")
+    alias_for = profile.get("alias_for")
+    if isinstance(alias_for, str):
+        return _resolve_reference_profile(alias_for)
+    images = [str(p) for p in profile.get("images", [])]
+    prompt_suffix = str(profile.get("prompt_suffix", ""))
+    return images, prompt_suffix
+
+
 def _extract_images(response) -> list[bytes]:
     images: list[bytes] = []
     for cand in response.candidates or []:
@@ -269,6 +305,7 @@ def _generate(
     prompt: str,
     model: str,
     references: list[str] | None,
+    reference_profile: str | None,
     target_size: str,
     output_format: str,
     quality: int,
@@ -279,8 +316,12 @@ def _generate(
     target_size / output_format / quality args.
     """
     client = genai.Client(api_key=_api_key())
-    contents: list = [prompt]
-    for ref in references or []:
+    profile_refs, profile_prompt = _resolve_reference_profile(reference_profile)
+    all_refs = [*(references or []), *profile_refs]
+    final_prompt = f"{prompt}{profile_prompt}"
+
+    contents: list = [final_prompt]
+    for ref in all_refs:
         contents.append(_read_reference_image(ref))
 
     response = client.models.generate_content(model=model, contents=contents)
@@ -353,6 +394,16 @@ def _common_size_format_props() -> dict:
                 "landing pages."
             ),
         },
+        "reference_profile": {
+            "type": "string",
+            "enum": sorted(REFERENCE_PROFILES),
+            "description": (
+                "Optional reusable reference bundle. Use 'botspot_spot' when an "
+                "image should include the canonical BotSpot/Lumibot Spot mascot. "
+                "Profiles append reference images and brand guardrails without "
+                "requiring every caller to know the asset paths."
+            ),
+        },
     }
 
 
@@ -416,10 +467,10 @@ async def list_tools() -> list[Tool]:
                     "reference_images": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "minItems": 1,
                         "description": (
                             "Absolute paths to reference images "
-                            "(PNG, JPEG, WebP, or GIF)."
+                            "(PNG, JPEG, WebP, or GIF). Optional if "
+                            "reference_profile is provided."
                         ),
                     },
                     "model": {
@@ -429,7 +480,7 @@ async def list_tools() -> list[Tool]:
                     },
                     **common,
                 },
-                "required": ["prompt", "reference_images"],
+                "required": ["prompt"],
                 "additionalProperties": False,
             },
         ),
@@ -450,14 +501,34 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
         if name == "generate_image":
             prompt = arguments["prompt"]
+            reference_profile = arguments.get("reference_profile")
             results, model_text = await asyncio.to_thread(
-                _generate, prompt, model, None, target_size, output_format, quality
+                _generate,
+                prompt,
+                model,
+                None,
+                reference_profile,
+                target_size,
+                output_format,
+                quality,
             )
         elif name == "edit_image":
             prompt = arguments["prompt"]
-            refs = arguments["reference_images"]
+            refs = arguments.get("reference_images") or []
+            reference_profile = arguments.get("reference_profile")
+            if not refs and not reference_profile:
+                raise ValueError(
+                    "edit_image requires reference_images or reference_profile."
+                )
             results, model_text = await asyncio.to_thread(
-                _generate, prompt, model, refs, target_size, output_format, quality
+                _generate,
+                prompt,
+                model,
+                refs,
+                reference_profile,
+                target_size,
+                output_format,
+                quality,
             )
         else:
             raise ValueError(f"Unknown tool: {name}")

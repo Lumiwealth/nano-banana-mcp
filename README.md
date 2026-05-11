@@ -14,6 +14,40 @@ that blow up your storage and load slowly.
 Both tools accept the same size + format params (see "Output post-processing"
 below).
 
+## Reference profiles
+
+Both tools support `reference_profile`, a reusable bundle of reference images
+and guardrail text. This is intentionally generic: a profile can represent a
+mascot, product UI, brand object, packaging style, or any other visual reference
+that should stay consistent across generated assets.
+
+Available profiles:
+
+- `botspot_spot` (aliases: `spot`, `botspot`) — canonical BotSpot/Lumibot Spot
+  mascot references and guardrails. Use this whenever a README, documentation,
+  newsletter, or marketing asset should include Spot.
+
+Examples:
+
+```python
+generate_image(
+    prompt="A clean technical diagram explaining AI trading agent memory. "
+           "Include Spot reviewing a decision journal next to the flow.",
+    reference_profile="botspot_spot",
+    target_size="1280x720",
+)
+
+edit_image(
+    prompt="Keep the same diagram structure, but add Spot actively managing "
+           "three small agent robots in the corner.",
+    reference_images=["/absolute/path/to/current_diagram.png"],
+    reference_profile="botspot_spot",
+)
+```
+
+If the MCP server was already running before a new profile was added, restart
+the MCP client/server session so the updated tool schema is visible.
+
 ## Environment
 
 | Var | Required | Default |
@@ -105,6 +139,12 @@ Integer 30-100 (WebP/JPEG only; ignored for PNG).
 ```python
 # Email hero, default 1024×1024 max → WebP @ 75 (smallest acceptable)
 generate_image(prompt="a stylized AI trading bot with a clipboard")
+
+# Brand-consistent BotSpot/Lumibot mascot image
+generate_image(
+    prompt="Spot helping a portfolio manager review agent memory files",
+    reference_profile="botspot_spot",
+)
 
 # Wide email banner — exact aspect
 generate_image(
