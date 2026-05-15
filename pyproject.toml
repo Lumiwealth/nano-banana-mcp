@@ -1,7 +1,7 @@
 [project]
 name = "nano-banana-mcp"
 version = "0.1.0"
-description = "Minimal MCP server for Google Nano Banana Pro (Gemini 3 Pro Image)"
+description = "Minimal MCP server for Google Nano Banana / Gemini image generation"
 requires-python = ">=3.11"
 dependencies = [
     "mcp>=1.2.0",

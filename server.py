@@ -3,16 +3,16 @@
 Nano Banana MCP Server
 
 A minimal, security-conscious MCP server for Google Gemini image generation.
-Defaults to gemini-3-pro-image-preview (Nano Banana Pro) — Google's flagship
-image model. Override per-call via the `model` parameter, or change the
-default via the NANO_BANANA_DEFAULT_MODEL environment variable.
+Defaults to gemini-3.1-flash-image-preview (Nano Banana 2) for lower-cost
+day-to-day generation. Override per-call via the `model` parameter, or change
+the default via the NANO_BANANA_DEFAULT_MODEL environment variable.
 
 Environment variables:
   GEMINI_API_KEY            Required. Google AI Studio API key.
   NANO_BANANA_OUTPUT_DIR    Optional. Where generated images are saved.
                             Default: ~/Documents/Development/.nano_banana_output
   NANO_BANANA_DEFAULT_MODEL Optional. Default model id.
-                            Default: gemini-3-pro-image-preview
+                            Default: gemini-3.1-flash-image-preview
   NANO_BANANA_BOTSPOT_SPOT_REFERENCES
                             Optional comma-separated local paths for the
                             botspot_spot reference profile.
@@ -42,28 +42,25 @@ ALLOWED_MODELS = {
 }
 
 DEFAULT_MODEL = os.environ.get(
-    "NANO_BANANA_DEFAULT_MODEL", "gemini-3-pro-image-preview"
+    "NANO_BANANA_DEFAULT_MODEL", "gemini-3.1-flash-image-preview"
 )
 
 # Sensible defaults for output post-processing. Optimized for email + mobile:
-# small file, retina-sharp, fast load, never above the Gemini 1024-2048 tier.
+# small file, fast load, and the cheapest Gemini output tier by default.
 #
-# Why 1280 default (not 1024 and not 4K):
+# Why 1024 default (not 1280 and not 4K):
 #   Gemini 3 Pro Image pricing as of 2026:
 #     ≤1024×1024  = $0.039 per image (325 tokens)
 #     1024-2048   = $0.134 per image (1,120 tokens)
 #     up to 4K    = $0.240 per image (2,000 tokens)
-#   Email + web research consensus: a hero image displayed at 600px should
-#   be exported at ~1200-1280 wide (2× display width for retina sharpness on
-#   iPhone Pro Max @ 1290 actual pixels). 1024 is just under the retina
-#   sweet spot; 2048+ is wasted because every email client downscales.
-#   Verdict: 1280 is the right place — sharp on retina, same pricing tier
-#   as 2048 so we lose nothing by going to the high end of the cheap-ish
-#   tier. Drop to 1024 if cost is the priority (~3.4× savings) and a slight
-#   retina softness is acceptable.
+#   Email + web research consensus: a hero image displayed at 600px is sharpest
+#   at ~1200-1280 wide, but 1024 is close enough for most drafts, internal
+#   assets, social previews, MMS, and agent-generated experiments. More
+#   importantly, 1024 avoids the 1024-2048 billing tier for Gemini 3 Pro Image.
+#   Override to 1280 for final email hero assets when retina sharpness matters.
 # Override per-call via target_size when high-res is genuinely needed
 # (print, oversized landing-page hero, infographic export).
-DEFAULT_TARGET_SIZE = os.environ.get("NANO_BANANA_DEFAULT_SIZE", "1280")
+DEFAULT_TARGET_SIZE = os.environ.get("NANO_BANANA_DEFAULT_SIZE", "1024")
 
 # Why WebP default: 25-35% smaller than JPEG at the same visual quality, lossless
 # alpha, supported in every modern email client (Gmail/Apple/Outlook web/iOS/
@@ -89,8 +86,8 @@ SIZE_PRESETS: dict[str, tuple[int, int]] = {
     "640": (640, 640),
     "1024": (1024, 1024),  # cheap tier ($0.039)
     "1k": (1024, 1024),
-    "1120": (1120, 1120),  # 2× of inline-email body width (560)
-    "1280": (1280, 1280),  # 2× of standard email hero (640) — DEFAULT
+    "1120": (1120, 1120),  # 2x of inline-email body width (560)
+    "1280": (1280, 1280),  # 2x of standard email hero (640), final assets
     "2048": (2048, 2048),
     "2k": (2048, 2048),
     "4k": (3840, 3840),
@@ -382,8 +379,9 @@ def _common_size_format_props() -> dict:
             "type": "string",
             "description": (
                 f"Output max dimensions. Default: {DEFAULT_TARGET_SIZE}. "
-                "Presets: '256', '512', '640', '1024' (recommended for email + "
-                "mobile), '2048', '4k'. Custom: 'WIDTHxHEIGHT' (e.g. '600x300'). "
+                "Presets: '256', '512', '640', '1024' (default cost-control "
+                "size), '1280' (final email hero), '2048', '4k'. Custom: "
+                "'WIDTHxHEIGHT' (e.g. '600x300'). "
                 "'off' returns the raw model output unchanged. "
                 "Aspect ratio is preserved; image is only downscaled, never "
                 "upscaled."
@@ -433,8 +431,9 @@ async def list_tools() -> list[Tool]:
         Tool(
             name="generate_image",
             description=(
-                "Generate an image with Google Nano Banana Pro (Gemini 3 Pro Image), "
-                "Google's flagship image generation model. The image is saved to a "
+                "Generate an image with Google Nano Banana / Gemini image models. "
+                "The default is Gemini 3.1 Flash Image for cost control; Pro is "
+                "available as an explicit model override. The image is saved to a "
                 "sandboxed local directory and the file path is returned. Use this "
                 "for marketing visuals, email images, mockups, illustrations, etc. "
                 "Be detailed in the prompt: subject, style, lighting, composition, "

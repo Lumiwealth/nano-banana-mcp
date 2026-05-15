@@ -1,10 +1,11 @@
 # Nano Banana MCP Server
 
 Minimal, security-conscious MCP server for Google Gemini image generation.
-Defaults to **Nano Banana Pro** (`gemini-3-pro-image-preview`) — Google's
-flagship image model. Output is **automatically resized + re-encoded** to
-web/email/mobile-optimal defaults so generated images aren't 4K monsters
-that blow up your storage and load slowly.
+Defaults to **Nano Banana 2 / Gemini 3.1 Flash Image**
+(`gemini-3.1-flash-image-preview`) and **1024px WebP output** so day-to-day
+agent usage does not accidentally produce Pro-tier, 2K, or 4K image bills.
+Output is automatically resized + re-encoded to web/email/mobile-friendly
+defaults.
 
 ## Tools
 
@@ -24,8 +25,9 @@ that should stay consistent across generated assets.
 Available profiles:
 
 - `botspot_spot` (aliases: `spot`, `botspot`) — canonical BotSpot/Lumibot Spot
-  mascot references and guardrails. Use this whenever a README, documentation,
-  newsletter, or marketing asset should include Spot.
+  mascot references and guardrails. Use this only when the image should include
+  Spot. It is optional; normal product shots, diagrams, backgrounds, and generic
+  marketing images do not need a mascot.
 
 Examples:
 
@@ -53,9 +55,9 @@ the MCP client/server session so the updated tool schema is visible.
 | Var | Required | Default |
 |---|---|---|
 | `GEMINI_API_KEY` | yes | — |
-| `NANO_BANANA_DEFAULT_MODEL` | no | `gemini-3-pro-image-preview` |
+| `NANO_BANANA_DEFAULT_MODEL` | no | `gemini-3.1-flash-image-preview` |
 | `NANO_BANANA_OUTPUT_DIR` | no | `~/Documents/Development/.nano_banana_output` |
-| `NANO_BANANA_DEFAULT_SIZE` | no | `1280` |
+| `NANO_BANANA_DEFAULT_SIZE` | no | `1024` |
 | `NANO_BANANA_DEFAULT_FORMAT` | no | `webp` |
 | `NANO_BANANA_DEFAULT_QUALITY` | no | `75` |
 | `NANO_BANANA_BOTSPOT_SPOT_REFERENCES` | no | Rob's local Spot asset paths if present |
@@ -91,15 +93,13 @@ Gemini 3 Pro Image bills by output resolution (verified 2026-04-27):
 | Output max side | Gemini cost / image | Use when |
 |---|---|---|
 | ≤1024 | **$0.039** | prototyping, MMS, anywhere a slight retina softness is fine |
-| 1024-2048 | **$0.134** (3.4× more) | **email hero (1280) — the default** |
+| 1024-2048 | **$0.134** (3.4× more) | final email hero (1280), when retina sharpness matters |
 | up to 4K | $0.240 (6.2× more) | print, oversized landing-page hero |
 
-Default is **1280** because every email client downscales to ~600px and
-exporting at 2× display width (1280) is the retina-sharp sweet spot.
-Gemini bills 1280 in the same tier as 2048 — going below 1280 saves
-tokens but loses sharpness; going above 1280 just wastes money. 4K is
-reserved for legitimate high-res use (print, large landing-page hero),
-not email.
+Default is **1024** because it keeps routine usage in the cheapest practical
+image tier. Use `1280` only for final email hero assets where retina sharpness
+matters. Use `2048` or `4k` only for real high-resolution deliverables such as
+print or oversized landing-page hero art.
 
 ### `target_size`
 
@@ -111,9 +111,9 @@ downscaled, never upscaled (we never add detail that isn't in the source).
 | `256` | 256×256 max — thumbnails, avatars |
 | `512` | 512×512 max — small product cards |
 | `640` | 640×640 max — MMS-friendly |
-| `1024` | 1024×1024 max — cheap-tier billing, slight retina softness in email |
+| `1024` *(default)* | 1024×1024 max — cheap-tier billing, slight retina softness in email |
 | `1120` | 1120×1120 max — inline body image (560 display × 2 retina) |
-| `1280` *(default)* | 1280×1280 max — **email hero (640 display × 2 retina), the right size for 99% of email use cases** |
+| `1280` | 1280×1280 max — final email hero (640 display × 2 retina) |
 | `2048` / `2k` | 2048×2048 max — desktop hero, print preview |
 | `4k` | 3840×3840 max — print, billboard, "show me everything" |
 | `WIDTHxHEIGHT` | exact custom max (e.g. `1280x640` for a 2:1 retina hero strip) |
@@ -138,7 +138,7 @@ Integer 30-100 (WebP/JPEG only; ignored for PNG).
 ### Example calls
 
 ```python
-# Email hero, default 1280×1280 max → WebP @ 75
+# Cost-controlled default: Flash model, 1024×1024 max, WebP @ 75
 generate_image(prompt="a stylized AI trading bot with a clipboard")
 
 # Brand-consistent BotSpot/Lumibot mascot image
@@ -190,6 +190,8 @@ From the directory where you cloned the repo:
 ```bash
 claude mcp add nano-banana \
   --env GEMINI_API_KEY=... \
+  --env NANO_BANANA_DEFAULT_MODEL=gemini-3.1-flash-image-preview \
+  --env NANO_BANANA_DEFAULT_SIZE=1024 \
   -- uv --directory "$(pwd)" run python server.py
 ```
 
@@ -199,7 +201,7 @@ For Codex-style config:
 [mcp_servers.nano_banana]
 command = "uv"
 args = ["--directory", "/absolute/path/to/nano-banana-mcp", "run", "python", "server.py"]
-env = { GEMINI_API_KEY = "..." }
+env = { GEMINI_API_KEY = "...", NANO_BANANA_DEFAULT_MODEL = "gemini-3.1-flash-image-preview", NANO_BANANA_DEFAULT_SIZE = "1024" }
 ```
 
 Restart the MCP client after adding the server, then look for the tools:
