@@ -88,18 +88,18 @@ on iPhone Pro Max.
 
 ### Pricing matters — the size you pick determines the bill
 
-Gemini 3 Pro Image bills by output resolution (verified 2026-04-27):
+Gemini image models bill by output resolution (verified against Google's
+official Gemini API pricing page on 2026-05-15):
 
-| Output max side | Gemini cost / image | Use when |
-|---|---|---|
-| ≤1024 | **$0.039** | prototyping, MMS, anywhere a slight retina softness is fine |
-| 1024-2048 | **$0.134** (3.4× more) | final email hero (1280), when retina sharpness matters |
-| up to 4K | $0.240 (6.2× more) | print, oversized landing-page hero |
+| Model | 1K | 2K | 4K |
+|---|---|---|---|
+| `gemini-3.1-flash-image-preview` | **$0.067** | $0.101 | $0.151 |
+| `gemini-3-pro-image-preview` | $0.134 | $0.134 | $0.240 |
 
 Default is **1024** because it keeps routine usage in the cheapest practical
-image tier. Use `1280` only for final email hero assets where retina sharpness
-matters. Use `2048` or `4k` only for real high-resolution deliverables such as
-print or oversized landing-page hero art.
+Flash Image tier. Use `1280` only for final email hero assets where retina
+sharpness matters. Use `2048` or `4k` only for real high-resolution deliverables
+such as print or oversized landing-page hero art.
 
 ### `target_size`
 
@@ -111,7 +111,7 @@ downscaled, never upscaled (we never add detail that isn't in the source).
 | `256` | 256×256 max — thumbnails, avatars |
 | `512` | 512×512 max — small product cards |
 | `640` | 640×640 max — MMS-friendly |
-| `1024` *(default)* | 1024×1024 max — cheap-tier billing, slight retina softness in email |
+| `1024` *(default)* | 1024×1024 max — cost-control default, slight retina softness in email |
 | `1120` | 1120×1120 max — inline body image (560 display × 2 retina) |
 | `1280` | 1280×1280 max — final email hero (640 display × 2 retina) |
 | `2048` / `2k` | 2048×2048 max — desktop hero, print preview |

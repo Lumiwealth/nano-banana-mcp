@@ -49,15 +49,14 @@ DEFAULT_MODEL = os.environ.get(
 # small file, fast load, and the cheapest Gemini output tier by default.
 #
 # Why 1024 default (not 1280 and not 4K):
-#   Gemini 3 Pro Image pricing as of 2026:
-#     ≤1024×1024  = $0.039 per image (325 tokens)
-#     1024-2048   = $0.134 per image (1,120 tokens)
-#     up to 4K    = $0.240 per image (2,000 tokens)
+#   Gemini API image pricing as of 2026-05-15:
+#     Gemini 3.1 Flash Image: $0.067 at 1K, $0.101 at 2K, $0.151 at 4K.
+#     Gemini 3 Pro Image: $0.134 at 1K/2K, $0.240 at 4K.
 #   Email + web research consensus: a hero image displayed at 600px is sharpest
 #   at ~1200-1280 wide, but 1024 is close enough for most drafts, internal
 #   assets, social previews, MMS, and agent-generated experiments. More
-#   importantly, 1024 avoids the 1024-2048 billing tier for Gemini 3 Pro Image.
-#   Override to 1280 for final email hero assets when retina sharpness matters.
+#   importantly, 1024 uses the lower Flash image size tier. Override to 1280 for
+#   final email hero assets when retina sharpness matters.
 # Override per-call via target_size when high-res is genuinely needed
 # (print, oversized landing-page hero, infographic export).
 DEFAULT_TARGET_SIZE = os.environ.get("NANO_BANANA_DEFAULT_SIZE", "1024")
@@ -84,7 +83,7 @@ SIZE_PRESETS: dict[str, tuple[int, int]] = {
     "256": (256, 256),
     "512": (512, 512),
     "640": (640, 640),
-    "1024": (1024, 1024),  # cheap tier ($0.039)
+    "1024": (1024, 1024),  # cost-control default
     "1k": (1024, 1024),
     "1120": (1120, 1120),  # 2x of inline-email body width (560)
     "1280": (1280, 1280),  # 2x of standard email hero (640), final assets
