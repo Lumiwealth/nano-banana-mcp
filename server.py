@@ -13,6 +13,9 @@ Environment variables:
                             Default: ~/Documents/Development/.nano_banana_output
   NANO_BANANA_DEFAULT_MODEL Optional. Default model id.
                             Default: gemini-3-pro-image-preview
+  NANO_BANANA_BOTSPOT_SPOT_REFERENCES
+                            Optional comma-separated local paths for the
+                            botspot_spot reference profile.
 """
 
 from __future__ import annotations
@@ -112,21 +115,32 @@ MIME_BY_SUFFIX = {
     ".gif": "image/gif",
 }
 
+
+def _env_path_list(name: str, default: list[str]) -> list[str]:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
 REFERENCE_PROFILES: dict[str, dict[str, object]] = {
     "botspot_spot": {
         "description": "BotSpot/Lumibot Spot mascot reference images and brand guardrails.",
-        "images": [
-            "/Users/robertgrzesik/Development/brand-assets/botspot/botspot_mascot_rgba.png",
-            "/Users/robertgrzesik/Development/brand-assets/botspot/botspot_mascot_transparent_ready.png",
-        ],
+        "images": _env_path_list(
+            "NANO_BANANA_BOTSPOT_SPOT_REFERENCES",
+            [
+                "/Users/robertgrzesik/Development/brand-assets/botspot/botspot_mascot_rgba.png",
+                "/Users/robertgrzesik/Development/brand-assets/botspot/botspot_mascot_transparent_ready.png",
+            ],
+        ),
         "prompt_suffix": (
             "\n\nReference profile: BotSpot Spot mascot. Use the attached Spot "
-            "reference images as the canonical character. Preserve the white/silver "
-            "robot body, orange goggle eyes, teal joints/accent details, friendly "
-            "mischievous expression, and core proportions. Place Spot doing an "
-            "action that is relevant to the requested topic instead of standing as "
-            "generic decoration. Do not show Spot giving investment advice or "
-            "guaranteeing trading performance."
+            "reference images, if available, as the canonical character. Preserve "
+            "the white/silver robot body, orange goggle eyes, teal joints/accent "
+            "details, friendly mischievous expression, and core proportions. Place "
+            "Spot doing an action that is relevant to the requested topic instead "
+            "of standing as generic decoration. Do not show Spot giving investment "
+            "advice or guaranteeing trading performance."
         ),
     },
     "spot": {"alias_for": "botspot_spot"},
@@ -283,7 +297,11 @@ def _resolve_reference_profile(name: str | None) -> tuple[list[str], str]:
     alias_for = profile.get("alias_for")
     if isinstance(alias_for, str):
         return _resolve_reference_profile(alias_for)
-    images = [str(p) for p in profile.get("images", [])]
+    images = [
+        str(Path(str(p)).expanduser())
+        for p in profile.get("images", [])
+        if Path(str(p)).expanduser().is_file()
+    ]
     prompt_suffix = str(profile.get("prompt_suffix", ""))
     return images, prompt_suffix
 

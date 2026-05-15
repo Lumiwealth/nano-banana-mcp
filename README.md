@@ -58,6 +58,7 @@ the MCP client/server session so the updated tool schema is visible.
 | `NANO_BANANA_DEFAULT_SIZE` | no | `1280` |
 | `NANO_BANANA_DEFAULT_FORMAT` | no | `webp` |
 | `NANO_BANANA_DEFAULT_QUALITY` | no | `75` |
+| `NANO_BANANA_BOTSPOT_SPOT_REFERENCES` | no | Rob's local Spot asset paths if present |
 
 ## Allowed models
 
@@ -137,7 +138,7 @@ Integer 30-100 (WebP/JPEG only; ignored for PNG).
 ### Example calls
 
 ```python
-# Email hero, default 1024×1024 max → WebP @ 75 (smallest acceptable)
+# Email hero, default 1280×1280 max → WebP @ 75
 generate_image(prompt="a stylized AI trading bot with a clipboard")
 
 # Brand-consistent BotSpot/Lumibot mascot image
@@ -176,14 +177,47 @@ generate_image(prompt="...", target_size="off")
 ## Run locally
 
 ```bash
-cd mcp_servers/nano_banana
+git clone https://github.com/Lumiwealth/nano-banana-mcp.git
+cd nano-banana-mcp
 uv sync
 GEMINI_API_KEY=... uv run python server.py
 ```
 
 ## Wire into Claude Code
 
-Registered via `claude mcp add` — see project setup.
+From the directory where you cloned the repo:
+
+```bash
+claude mcp add nano-banana \
+  --env GEMINI_API_KEY=... \
+  -- uv --directory "$(pwd)" run python server.py
+```
+
+For Codex-style config:
+
+```toml
+[mcp_servers.nano_banana]
+command = "uv"
+args = ["--directory", "/absolute/path/to/nano-banana-mcp", "run", "python", "server.py"]
+env = { GEMINI_API_KEY = "..." }
+```
+
+Restart the MCP client after adding the server, then look for the tools:
+
+- `generate_image`
+- `edit_image`
+
+### Optional BotSpot Spot profile
+
+The `botspot_spot` profile works best when local Spot reference images are
+configured:
+
+```bash
+export NANO_BANANA_BOTSPOT_SPOT_REFERENCES="/path/to/spot-1.png,/path/to/spot-2.png"
+```
+
+If those files are not present, the profile still applies the Spot prompt
+guardrails but sends no reference image bytes.
 
 ## Why this exists in MCP form
 
