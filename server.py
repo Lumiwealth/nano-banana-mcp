@@ -17,6 +17,7 @@ import sqlite3
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.request import Request, urlopen
 
 from google import genai
 from google.genai import types
@@ -27,6 +28,8 @@ from mcp.types import TextContent, Tool
 APPROVED_MODEL = "gemini-3.1-flash-image-preview"
 APPROVED_IMAGE_SIZE = "1K"
 ESTIMATED_COST_USD = 0.067
+COMPANY_CREATIVE_HARD_CEILING_USD = 300.0
+ALERT_INTERVAL_USD = 100
 PURPOSES = ("thumbnail", "slide", "email", "sms", "website", "test")
 ASPECT_RATIOS = ("16:9", "1:1", "9:16")
 
@@ -56,9 +59,10 @@ MIME_BY_SUFFIX = {
 
 def _monthly_budget_usd() -> float:
     value = float(os.environ.get("IMAGE_GENERATOR_MONTHLY_BUDGET_USD", "100"))
-    if value < 100 or value % 100 != 0:
+    if value < 100 or value % 100 != 0 or value > COMPANY_CREATIVE_HARD_CEILING_USD:
         raise RuntimeError(
-            "IMAGE_GENERATOR_MONTHLY_BUDGET_USD must be a positive $100 increment."
+            "IMAGE_GENERATOR_MONTHLY_BUDGET_USD must be a $100 increment from "
+            "$100 through the $300 company creative ceiling."
         )
     return value
 
@@ -99,11 +103,77 @@ def _connect() -> sqlite3.Connection:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS spend_alerts (
+            month TEXT NOT NULL,
+            threshold_usd INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            projected_spend_usd REAL NOT NULL,
+            status TEXT NOT NULL,
+            PRIMARY KEY (month, threshold_usd)
+        )
+        """
+    )
     return conn
 
 
 def _month() -> str:
     return datetime.now(UTC).strftime("%Y-%m")
+
+
+def _deliver_alert(payload: dict[str, object]) -> None:
+    """Persist every alert locally and optionally deliver it to a webhook."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    alert_file = STATE_DIR / "spend-alerts.jsonl"
+    with alert_file.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, sort_keys=True) + "\n")
+    webhook = os.environ.get("IMAGE_GENERATOR_ALERT_WEBHOOK_URL", "").strip()
+    if not webhook:
+        return
+    request = Request(
+        webhook,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=10):  # noqa: S310 - operator-configured webhook
+            pass
+    except Exception:
+        # The hard budget remains authoritative even when notification delivery fails.
+        pass
+
+
+def _record_due_alerts(
+    conn: sqlite3.Connection, *, projected_spend: float, budget: float
+) -> None:
+    for threshold in range(
+        ALERT_INTERVAL_USD,
+        int(COMPANY_CREATIVE_HARD_CEILING_USD) + ALERT_INTERVAL_USD,
+        ALERT_INTERVAL_USD,
+    ):
+        if projected_spend < threshold or threshold > budget:
+            continue
+        status = "blocked" if projected_spend > budget and threshold == int(budget) else "reached"
+        cursor = conn.execute(
+            """
+            INSERT OR IGNORE INTO spend_alerts (
+                month, threshold_usd, created_at, projected_spend_usd, status
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            (_month(), threshold, datetime.now(UTC).isoformat(), projected_spend, status),
+        )
+        if cursor.rowcount:
+            _deliver_alert(
+                {
+                    "type": "creative_image_spend_threshold",
+                    "month": _month(),
+                    "threshold_usd": threshold,
+                    "projected_spend_usd": round(projected_spend, 4),
+                    "status": status,
+                }
+            )
 
 
 def _reserve(purpose: str, aspect_ratio: str) -> int:
@@ -121,7 +191,9 @@ def _reserve(purpose: str, aspect_ratio: str) -> int:
             ).fetchone()[0]
         )
         budget = _monthly_budget_usd()
-        if spent + ESTIMATED_COST_USD > budget:
+        projected = spent + ESTIMATED_COST_USD
+        _record_due_alerts(conn, projected_spend=projected, budget=budget)
+        if projected > budget:
             raise RuntimeError(
                 f"Creative image budget exhausted: ${spent:.2f} used/reserved of "
                 f"${budget:.2f} for {_month()}. Rob must explicitly raise the "
@@ -178,6 +250,13 @@ def _usage_report() -> dict[str, object]:
             """,
             (_month(),),
         ).fetchall()
+        alerts = conn.execute(
+            """
+            SELECT threshold_usd, created_at, projected_spend_usd, status
+            FROM spend_alerts WHERE month=? ORDER BY threshold_usd
+            """,
+            (_month(),),
+        ).fetchall()
     return {
         "month": _month(),
         "budget_usd": _monthly_budget_usd(),
@@ -191,6 +270,15 @@ def _usage_report() -> dict[str, object]:
                 "actual_cost_usd": row[5],
             }
             for row in rows
+        ],
+        "alerts": [
+            {
+                "threshold_usd": row[0],
+                "created_at": row[1],
+                "projected_spend_usd": row[2],
+                "status": row[3],
+            }
+            for row in alerts
         ],
     }
 

@@ -25,9 +25,13 @@ __pycache__/
 venv/
 env/
 
-# --- Generated images sandbox (per NANO_BANANA_OUTPUT_DIR) ---
+# --- Generated images sandbox ---
 .nano_banana_output/
 nano_banana_output/
+benchmarks/**/.private-mapping.json
+benchmarks/**/blind-index.json
+benchmarks/**/receipt.json
+benchmarks/**/*.png
 
 # --- Editor / OS ---
 .vscode/

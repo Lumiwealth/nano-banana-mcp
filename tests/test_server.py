@@ -55,3 +55,26 @@ def test_ledger_attributes_without_prompt_or_raw_key(tmp_path, monkeypatch) -> N
     assert row[6] == "succeeded"
     assert "prompt" not in columns
     assert "api_key" not in columns
+
+
+def test_budget_must_stay_within_company_creative_ceiling(monkeypatch) -> None:
+    monkeypatch.setenv("IMAGE_GENERATOR_MONTHLY_BUDGET_USD", "400")
+    with pytest.raises(RuntimeError, match="company creative ceiling"):
+        server._monthly_budget_usd()
+
+
+def test_each_hundred_dollar_alert_is_recorded_once(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(server, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(server, "LEDGER_PATH", tmp_path / "usage.sqlite3")
+    monkeypatch.setattr(server, "ESTIMATED_COST_USD", 100.0)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    first = server._reserve("slide", "16:9")
+    server._finish(first, elapsed_ms=1, error=None)
+    with pytest.raises(RuntimeError, match="budget exhausted"):
+        server._reserve("slide", "16:9")
+    with server._connect() as conn:
+        alerts = conn.execute(
+            "SELECT threshold_usd FROM spend_alerts ORDER BY threshold_usd"
+        ).fetchall()
+    assert alerts == [(100,)]
+    assert len((tmp_path / "spend-alerts.jsonl").read_text().splitlines()) == 1
