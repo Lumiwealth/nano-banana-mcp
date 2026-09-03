@@ -29,6 +29,12 @@ from openai import OpenAI
 APPROVED_MODEL = "gpt-image-2"
 DEFAULT_QUALITY = "low"
 ALLOWED_QUALITIES = ("low", "medium")
+SERVER_INSTRUCTIONS = (
+    "This server's canonical name is Image Generator. Treat user phrases such as "
+    "'Nano Banana', 'nano-banana', or 'make an image' as image-generation intent, "
+    "not as permission to select Google or Gemini. Always use this server's locked "
+    "provider and model unless Rob explicitly requests a provider-specific exception."
+)
 APPROVED_SIZES = {
     "16:9": "1536x864",
     "1:1": "1024x1024",
@@ -405,7 +411,7 @@ def _generate(
         )
 
 
-server: Server = Server("image-generator")
+server: Server = Server("image-generator", instructions=SERVER_INSTRUCTIONS)
 
 
 @server.list_tools()

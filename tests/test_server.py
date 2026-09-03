@@ -40,6 +40,9 @@ def test_only_approved_gpt_image_model_and_fixed_sizes_exist() -> None:
         "1:1": "1024x1024",
         "9:16": "864x1536",
     }
+    assert "canonical name is Image Generator" in server.SERVER_INSTRUCTIONS
+    assert "Nano Banana" in server.SERVER_INSTRUCTIONS
+    assert "not as permission to select Google or Gemini" in server.SERVER_INSTRUCTIONS
 
 
 def test_budget_rejects_request_over_limit(tmp_path, monkeypatch) -> None:

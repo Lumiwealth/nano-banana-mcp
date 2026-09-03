@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_dir="/Users/robertgrzesik/Development/mcp_servers/nano_banana"
+repo_dir="/Users/robertgrzesik/Development/mcp_servers/image_generator"
 credentials_file="/Users/robertgrzesik/Development/botspot_agent/.env"
 
 if [[ ! -f "$credentials_file" ]]; then

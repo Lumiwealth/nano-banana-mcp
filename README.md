@@ -1,8 +1,11 @@
 # Image Generator MCP
 
-Provider-neutral MCP boundary for controlled image generation. The repository
-retains its historical directory name for compatibility, but the server and
-package are now named `image-generator`.
+Provider-neutral MCP boundary for controlled image generation. The server,
+package, client registration, and local directory are named `image-generator`.
+
+`Nano Banana` and `nano-banana` are legacy user-language aliases for “use the
+approved Image Generator.” They do not select Google, Gemini, or another model.
+A provider-specific exception requires an explicit request from Rob.
 
 The current containment profile is intentionally strict:
 
