@@ -6,16 +6,14 @@ package are now named `image-generator`.
 
 The current containment profile is intentionally strict:
 
-- approved model: `gemini-3.1-flash-image-preview`
-- server-controlled output: 1K
+- approved model: `gpt-image-2`
+- server-controlled resolution: exact 16:9, 1:1, or 9:16 sizes
+- default quality: `low`; the only permitted upgrade is `medium`
 - calendar-month creative budget: $100
-- caller inputs: prompt, purpose, and aspect ratio only
-- prohibited caller inputs: model, quality, resolution, target size, and output format
-- Gemini Pro is not present in the runtime allowlist or tool schema
+- caller inputs: prompt, purpose, aspect ratio, and optional low/medium quality
+- prohibited caller inputs: model, resolution, target size, output format, high
+  quality, and auto quality
 - the exact provider response is saved without cropping, overlays, or repair
-
-Direct Gemini generation can remain unavailable while the account is unpaid;
-the local controls and tests do not require a paid call.
 
 ## Tools
 
@@ -30,9 +28,9 @@ Every generation requires one purpose:
 
 The SQLite ledger defaults to
 `~/.local/state/image-generator/usage.sqlite3`. It records timestamp, purpose,
-caller, a one-way API-key fingerprint, provider, model, resolution, retry count,
-estimated/actual cost, elapsed time, and status. It never stores the raw key or
-the prompt.
+caller, a one-way API-key fingerprint, provider, model, quality, resolution,
+retry count, estimated/actual cost, elapsed time, and status. It never stores
+the raw key or the prompt.
 
 The default monthly ceiling is $100. Rob can manually unlock only in $100
 increments by changing `IMAGE_GENERATOR_MONTHLY_BUDGET_USD`. Failed provider
@@ -43,29 +41,28 @@ request after accepting it.
 
 | Variable | Default |
 |---|---|
-| `GEMINI_API_KEY` | required for live generation |
+| `OPENAI_API_KEY` | required for live generation |
 | `IMAGE_GENERATOR_OUTPUT_DIR` | `~/Documents/Development/.image_generator_output` |
 | `IMAGE_GENERATOR_STATE_DIR` | `~/.local/state/image-generator` |
 | `IMAGE_GENERATOR_CALLER` | `creative-image-generator` |
 | `IMAGE_GENERATOR_MONTHLY_BUDGET_USD` | `100` |
 
-There is deliberately no environment or tool parameter that enables Gemini Pro
-or raises resolution. A future approved provider is selected by changing the
-server implementation and its tests after a blind quality/cost benchmark.
+There is deliberately no environment or tool parameter that changes the model
+or resolution. `low` is used when quality is omitted. `medium` may be selected
+for a final asset when Rob asks for it or an inspected low-quality result is
+insufficient; `high` and `auto` are unavailable.
 
 ## Run and test
 
 ```bash
 uv sync --dev
 uv run pytest
-GEMINI_API_KEY=... uv run python server.py
+OPENAI_API_KEY=... uv run python server.py
 ```
 
-Codex configuration should use a provider-neutral key:
+Codex and Claude should launch the checked-in wrapper, which loads the approved
+local credential source without copying a raw key into either MCP config:
 
-```toml
-[mcp_servers.image_generator]
-command = "uv"
-args = ["--directory", "/absolute/path/to/nano-banana-mcp", "run", "python", "server.py"]
-env = { GEMINI_API_KEY = "...", IMAGE_GENERATOR_CALLER = "creative-image-generator", IMAGE_GENERATOR_MONTHLY_BUDGET_USD = "100" }
+```bash
+IMAGE_GENERATOR_CALLER=creative-image-generator ./run.sh
 ```

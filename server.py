@@ -1,37 +1,49 @@
 #!/usr/bin/env python3
 """Provider-neutral, cost-controlled MCP image generator.
 
-The active provider/model, output tier, and monthly budget are server settings.
-Callers may supply only creative intent: prompt, purpose, aspect ratio, and
-optional references. Gemini Pro, 2K/4K, auto quality, and per-call model
-selection are deliberately unavailable.
+The provider/model, resolution, and monthly budget are server settings. Callers
+may supply creative intent plus one tightly bounded quality choice: low is the
+default and medium is the only permitted upgrade. High/auto quality and
+per-call model or resolution selection are deliberately unavailable.
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import os
 import sqlite3
 import time
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from google import genai
-from google.genai import types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
+from openai import OpenAI
 
-APPROVED_MODEL = "gemini-3.1-flash-image-preview"
-APPROVED_IMAGE_SIZE = "1K"
-ESTIMATED_COST_USD = 0.067
+APPROVED_MODEL = "gpt-image-2"
+DEFAULT_QUALITY = "low"
+ALLOWED_QUALITIES = ("low", "medium")
+APPROVED_SIZES = {
+    "16:9": "1536x864",
+    "1:1": "1024x1024",
+    "9:16": "864x1536",
+}
+# Deliberately conservative reservation ceilings. Successful calls replace
+# these with token-derived actual cost in the ledger.
+ESTIMATED_COST_USD_BY_QUALITY = {"low": 0.01, "medium": 0.05}
+OPENAI_TEXT_INPUT_USD_PER_MILLION = 5.0
+OPENAI_IMAGE_INPUT_USD_PER_MILLION = 8.0
+OPENAI_IMAGE_OUTPUT_USD_PER_MILLION = 30.0
 COMPANY_CREATIVE_HARD_CEILING_USD = 300.0
 ALERT_INTERVAL_USD = 100
 PURPOSES = ("thumbnail", "slide", "email", "sms", "website", "test")
-ASPECT_RATIOS = ("16:9", "1:1", "9:16")
+ASPECT_RATIOS = tuple(APPROVED_SIZES)
 
 OUTPUT_DIR = Path(
     os.environ.get(
@@ -68,9 +80,9 @@ def _monthly_budget_usd() -> float:
 
 
 def _api_key() -> str:
-    key = os.environ.get("GEMINI_API_KEY")
+    key = os.environ.get("OPENAI_API_KEY")
     if not key:
-        raise RuntimeError("GEMINI_API_KEY is not configured for this server.")
+        raise RuntimeError("OPENAI_API_KEY is not configured for this server.")
     return key
 
 
@@ -92,6 +104,7 @@ def _connect() -> sqlite3.Connection:
             key_id TEXT NOT NULL,
             provider TEXT NOT NULL,
             model TEXT NOT NULL,
+            quality TEXT NOT NULL,
             resolution TEXT NOT NULL,
             aspect_ratio TEXT NOT NULL,
             retries INTEGER NOT NULL,
@@ -103,6 +116,11 @@ def _connect() -> sqlite3.Connection:
         )
         """
     )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(usage)")}
+    if "quality" not in columns:
+        conn.execute(
+            "ALTER TABLE usage ADD COLUMN quality TEXT NOT NULL DEFAULT 'legacy'"
+        )
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS spend_alerts (
@@ -176,11 +194,14 @@ def _record_due_alerts(
             )
 
 
-def _reserve(purpose: str, aspect_ratio: str) -> int:
+def _reserve(purpose: str, aspect_ratio: str, quality: str = DEFAULT_QUALITY) -> int:
     if purpose not in PURPOSES:
         raise ValueError(f"purpose must be one of {PURPOSES}")
     if aspect_ratio not in ASPECT_RATIOS:
         raise ValueError(f"aspect_ratio must be one of {ASPECT_RATIOS}")
+    if quality not in ALLOWED_QUALITIES:
+        raise ValueError(f"quality must be one of {ALLOWED_QUALITIES}")
+    estimated_cost = ESTIMATED_COST_USD_BY_QUALITY[quality]
     with _connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
         spent = float(
@@ -191,7 +212,7 @@ def _reserve(purpose: str, aspect_ratio: str) -> int:
             ).fetchone()[0]
         )
         budget = _monthly_budget_usd()
-        projected = spent + ESTIMATED_COST_USD
+        projected = spent + estimated_cost
         _record_due_alerts(conn, projected_spend=projected, budget=budget)
         if projected > budget:
             raise RuntimeError(
@@ -203,8 +224,9 @@ def _reserve(purpose: str, aspect_ratio: str) -> int:
             """
             INSERT INTO usage (
                 created_at, month, purpose, caller, key_id, provider, model,
-                resolution, aspect_ratio, retries, estimated_cost_usd, status
-            ) VALUES (?, ?, ?, ?, ?, 'google', ?, ?, ?, 0, ?, 'reserved')
+                quality, resolution, aspect_ratio, retries, estimated_cost_usd,
+                status
+            ) VALUES (?, ?, ?, ?, ?, 'openai', ?, ?, ?, ?, 0, ?, 'reserved')
             """,
             (
                 datetime.now(UTC).isoformat(),
@@ -213,27 +235,35 @@ def _reserve(purpose: str, aspect_ratio: str) -> int:
                 CALLER,
                 _key_id(),
                 APPROVED_MODEL,
-                APPROVED_IMAGE_SIZE,
+                quality,
+                APPROVED_SIZES[aspect_ratio],
                 aspect_ratio,
-                ESTIMATED_COST_USD,
+                estimated_cost,
             ),
         )
         return int(cursor.lastrowid)
 
 
-def _finish(reservation_id: int, *, elapsed_ms: int, error: Exception | None) -> None:
+def _finish(
+    reservation_id: int,
+    *,
+    elapsed_ms: int,
+    actual_cost_usd: float | None,
+    error: Exception | None,
+) -> None:
     with _connect() as conn:
         if error is None:
             conn.execute(
                 "UPDATE usage SET status='succeeded', actual_cost_usd=?, "
                 "elapsed_ms=? WHERE id=?",
-                (ESTIMATED_COST_USD, elapsed_ms, reservation_id),
+                (actual_cost_usd, elapsed_ms, reservation_id),
             )
         else:
             conn.execute(
-                "UPDATE usage SET status='failed', actual_cost_usd=?, elapsed_ms=?, "
+                "UPDATE usage SET status='failed', actual_cost_usd="
+                "COALESCE(?, estimated_cost_usd), elapsed_ms=?, "
                 "error_type=? WHERE id=?",
-                (ESTIMATED_COST_USD, elapsed_ms, type(error).__name__, reservation_id),
+                (actual_cost_usd, elapsed_ms, type(error).__name__, reservation_id),
             )
 
 
@@ -241,12 +271,12 @@ def _usage_report() -> dict[str, object]:
     with _connect() as conn:
         rows = conn.execute(
             """
-            SELECT purpose, model, resolution, COUNT(*),
+            SELECT purpose, model, quality, resolution, COUNT(*),
                    ROUND(SUM(estimated_cost_usd), 4),
                    ROUND(SUM(COALESCE(actual_cost_usd, 0)), 4)
             FROM usage WHERE month=?
-            GROUP BY purpose, model, resolution
-            ORDER BY purpose, model
+            GROUP BY purpose, model, quality, resolution
+            ORDER BY purpose, model, quality
             """,
             (_month(),),
         ).fetchall()
@@ -264,10 +294,11 @@ def _usage_report() -> dict[str, object]:
             {
                 "purpose": row[0],
                 "model": row[1],
-                "resolution": row[2],
-                "requests": row[3],
-                "estimated_cost_usd": row[4],
-                "actual_cost_usd": row[5],
+                "quality": row[2],
+                "resolution": row[3],
+                "requests": row[4],
+                "estimated_cost_usd": row[5],
+                "actual_cost_usd": row[6],
             }
             for row in rows
         ],
@@ -283,66 +314,85 @@ def _usage_report() -> dict[str, object]:
     }
 
 
-def _read_reference(path_str: str) -> types.Part:
+def _read_reference(path_str: str) -> Path:
     path = Path(path_str).expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(f"Reference image not found: {path}")
     mime = MIME_BY_SUFFIX.get(path.suffix.lower())
     if not mime:
         raise ValueError(f"Unsupported reference image type: {path.suffix}")
-    data = path.read_bytes()
-    if len(data) > MAX_REFERENCE_BYTES:
+    if path.stat().st_size > MAX_REFERENCE_BYTES:
         raise ValueError(f"Reference image exceeds {MAX_REFERENCE_BYTES} bytes")
-    return types.Part.from_bytes(data=data, mime_type=mime)
+    return path
 
 
-def _extract_images(response: object) -> list[tuple[bytes, str]]:
-    found: list[tuple[bytes, str]] = []
-    for candidate in getattr(response, "candidates", None) or []:
-        content = getattr(candidate, "content", None)
-        for part in getattr(content, "parts", None) or []:
-            inline = getattr(part, "inline_data", None)
-            data = getattr(inline, "data", None)
-            if data:
-                found.append((data, getattr(inline, "mime_type", "image/png")))
-    return found
-
-
-def _extension(mime: str) -> str:
-    return {"image/jpeg": "jpg", "image/webp": "webp"}.get(mime, "png")
+def _actual_cost(response: object) -> float | None:
+    metadata = response.model_dump(exclude={"data"})
+    usage = metadata.get("usage") or {}
+    input_details = usage.get("input_tokens_details") or {}
+    output_details = usage.get("output_tokens_details") or {}
+    text_input = int(input_details.get("text_tokens") or 0)
+    image_input = int(input_details.get("image_tokens") or 0)
+    image_output = int(
+        output_details.get("image_tokens") or usage.get("output_tokens") or 0
+    )
+    if not any((text_input, image_input, image_output)):
+        return None
+    return round(
+        (
+            text_input * OPENAI_TEXT_INPUT_USD_PER_MILLION
+            + image_input * OPENAI_IMAGE_INPUT_USD_PER_MILLION
+            + image_output * OPENAI_IMAGE_OUTPUT_USD_PER_MILLION
+        )
+        / 1_000_000,
+        6,
+    )
 
 
 def _generate(
-    *, prompt: str, purpose: str, aspect_ratio: str, references: list[str]
+    *,
+    prompt: str,
+    purpose: str,
+    aspect_ratio: str,
+    quality: str,
+    references: list[str],
 ) -> list[Path]:
-    reservation_id = _reserve(purpose, aspect_ratio)
+    reservation_id = _reserve(purpose, aspect_ratio, quality)
     started = time.monotonic()
     error: Exception | None = None
+    actual_cost_usd: float | None = None
     try:
-        contents: list[object] = [prompt]
-        contents.extend(_read_reference(path) for path in references)
-        response = genai.Client(api_key=_api_key()).models.generate_content(
-            model=APPROVED_MODEL,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                response_modalities=["IMAGE"],
-                image_config=types.ImageConfig(
-                    aspect_ratio=aspect_ratio,
-                    image_size=APPROVED_IMAGE_SIZE,
-                ),
-            ),
-        )
-        images = _extract_images(response)
+        client = OpenAI(api_key=_api_key())
+        common = {
+            "model": APPROVED_MODEL,
+            "prompt": prompt,
+            "quality": quality,
+            "size": APPROVED_SIZES[aspect_ratio],
+            "output_format": "png",
+        }
+        if references:
+            paths = [_read_reference(path) for path in references]
+            with ExitStack() as stack:
+                files = [stack.enter_context(path.open("rb")) for path in paths]
+                response = client.images.edit(image=files, **common)
+        else:
+            response = client.images.generate(**common)
+        actual_cost_usd = _actual_cost(response)
+        images = [
+            base64.b64decode(item.b64_json)
+            for item in response.data
+            if getattr(item, "b64_json", None)
+        ]
         if not images:
             raise RuntimeError("Approved generator returned no image")
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        paths: list[Path] = []
+        output_paths: list[Path] = []
         stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
-        for index, (data, mime) in enumerate(images, start=1):
-            path = OUTPUT_DIR / f"image_{stamp}_{index}.{_extension(mime)}"
+        for index, data in enumerate(images, start=1):
+            path = OUTPUT_DIR / f"image_{stamp}_{index}.png"
             path.write_bytes(data)
-            paths.append(path)
-        return paths
+            output_paths.append(path)
+        return output_paths
     except Exception as exc:
         error = exc
         raise
@@ -350,6 +400,7 @@ def _generate(
         _finish(
             reservation_id,
             elapsed_ms=int((time.monotonic() - started) * 1000),
+            actual_cost_usd=actual_cost_usd,
             error=error,
         )
 
@@ -369,7 +420,16 @@ async def list_tools() -> list[Tool]:
         "aspect_ratio": {
             "type": "string",
             "enum": list(ASPECT_RATIOS),
-            "description": "Creative aspect ratio; resolution remains server-controlled at 1K.",
+            "description": "Creative aspect ratio; exact resolution remains server-controlled.",
+        },
+        "quality": {
+            "type": "string",
+            "enum": list(ALLOWED_QUALITIES),
+            "default": DEFAULT_QUALITY,
+            "description": (
+                "Optional output quality. Omit for low. Use medium only when the "
+                "user requests it or an inspected low-quality result is insufficient."
+            ),
         },
     }
     return [
@@ -377,8 +437,10 @@ async def list_tools() -> list[Tool]:
             name="generate_image",
             description=(
                 "Generate one image using the approved server-controlled provider, "
-                "model, quality, and 1K resolution. Callers cannot select Pro, 2K, "
-                "4K, or auto quality. The raw provider result is saved without edits."
+                "GPT Image 2 model, and exact resolution. Quality defaults to low; "
+                "medium is the only allowed upgrade. High/auto quality and model or "
+                "resolution overrides are unavailable. The raw result is saved "
+                "without edits."
             ),
             inputSchema={
                 "type": "object",
@@ -391,7 +453,8 @@ async def list_tools() -> list[Tool]:
             name="edit_image",
             description=(
                 "Regenerate an image from references using the same approved, "
-                "server-controlled 1K generator. The result is not hand-repaired."
+                "server-controlled generator. Low is the default and medium is the "
+                "only allowed upgrade. The result is not hand-repaired."
             ),
             inputSchema={
                 "type": "object",
@@ -428,6 +491,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             prompt=str(arguments["prompt"]),
             purpose=str(arguments["purpose"]),
             aspect_ratio=str(arguments["aspect_ratio"]),
+            quality=str(arguments.get("quality", DEFAULT_QUALITY)),
             references=list(arguments.get("reference_images") or []),
         )
         text = "Generated raw approved-provider image(s):\n" + "\n".join(
