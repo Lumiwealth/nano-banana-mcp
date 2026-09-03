@@ -40,7 +40,7 @@ PROFILES: dict[str, dict[str, object]] = {
         "provider": "together", "model": "black-forest-labs/FLUX.2-pro", "max_cost": 0.03,
     },
     "together-qwen-image-2": {
-        "provider": "together", "model": "Qwen/Qwen-Image-2.0", "max_cost": 0.04,
+        "provider": "together", "model": "Qwen/Qwen-Image-2.0", "max_cost": 0.035,
     },
     "together-gemini-flash": {
         "provider": "together", "model": "google/flash-image-3.1", "max_cost": 0.05,
@@ -87,21 +87,29 @@ def _xai_generate(profile: dict[str, object], prompt: str) -> tuple[bytes, dict]
 
 
 def _together_generate(profile: dict[str, object], prompt: str) -> tuple[bytes, dict]:
+    request = {
+        "model": profile["model"],
+        "prompt": prompt,
+        "n": 1,
+        "response_format": "base64",
+        "output_format": "png",
+    }
+    if str(profile["model"]).startswith("google/"):
+        # Together's Gemini 3.1 Flash endpoint requires one of Google's exact
+        # supported dimensions; a generic aspect_ratio silently returned 1:1.
+        request.update({"width": 1376, "height": 768})
+    else:
+        request.update({"width": 1344, "height": 768})
     response = httpx.post(
         "https://api.together.xyz/v1/images/generations",
         headers={"Authorization": f"Bearer {os.environ['TOGETHER_API_KEY']}"},
-        json={
-            "model": profile["model"],
-            "prompt": prompt,
-            "width": 1344,
-            "height": 768,
-            "n": 1,
-            "response_format": "base64",
-            "output_format": "png",
-        },
+        json=request,
         timeout=180,
     )
-    response.raise_for_status()
+    if response.is_error:
+        raise RuntimeError(
+            f"Together returned HTTP {response.status_code}: {response.text[:1000]}"
+        )
     payload = response.json()
     item = payload["data"][0]
     if item.get("b64_json"):
@@ -192,12 +200,21 @@ def main() -> int:
     shuffled = jobs[:]
     randomizer.shuffle(shuffled)
     labels = {job: f"{chr(65 + index // 26)}{chr(65 + index % 26)}" for index, job in enumerate(shuffled)}
-    public: list[dict] = []
-    private: list[dict] = []
-    spent = 0.0
-    actual_spent = 0.0
+    public_path = args.output_dir / "blind-index.json"
+    private_path = args.output_dir / ".private-mapping.json"
+    public: list[dict] = (
+        json.loads(public_path.read_text(encoding="utf-8")) if public_path.exists() else []
+    )
+    private: list[dict] = (
+        json.loads(private_path.read_text(encoding="utf-8")) if private_path.exists() else []
+    )
+    completed = {(row["prompt_id"], row["model"]) for row in private}
+    spent = sum(float(row["maximum_cost_usd"]) for row in private)
+    actual_spent = sum(float(row["actual_cost_usd"]) for row in private)
     for prompt_id, prompt, profile_name in jobs:
         profile = PROFILES[profile_name]
+        if (prompt_id, profile["model"]) in completed:
+            continue
         estimated = float(profile["max_cost"])
         if spent + estimated > args.max_spend:
             raise RuntimeError("Runtime spend ceiling would be exceeded")
@@ -234,12 +251,9 @@ def main() -> int:
                 "response_metadata": metadata,
             }
         )
-        (args.output_dir / "blind-index.json").write_text(
-            json.dumps(public, indent=2) + "\n", encoding="utf-8"
-        )
-        mapping = args.output_dir / ".private-mapping.json"
-        mapping.write_text(json.dumps(private, indent=2) + "\n", encoding="utf-8")
-        mapping.chmod(0o600)
+        public_path.write_text(json.dumps(public, indent=2) + "\n", encoding="utf-8")
+        private_path.write_text(json.dumps(private, indent=2) + "\n", encoding="utf-8")
+        private_path.chmod(0o600)
 
     receipt = {
         "created_at": datetime.now(UTC).isoformat(),
