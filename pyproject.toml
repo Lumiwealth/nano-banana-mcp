@@ -1,7 +1,7 @@
 [project]
-name = "nano-banana-mcp"
-version = "0.1.0"
-description = "Minimal MCP server for Google Nano Banana / Gemini image generation"
+name = "image-generator-mcp"
+version = "0.2.0"
+description = "Provider-neutral, cost-controlled MCP image generation"
 requires-python = ">=3.11"
 dependencies = [
     "mcp>=1.2.0",
@@ -11,3 +11,6 @@ dependencies = [
 
 [tool.uv]
 package = false
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
