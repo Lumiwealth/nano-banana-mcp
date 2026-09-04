@@ -15,6 +15,8 @@ import hashlib
 import json
 import os
 import sqlite3
+import subprocess
+import sys
 import time
 from contextlib import ExitStack
 from datetime import UTC, datetime
@@ -48,6 +50,7 @@ OPENAI_IMAGE_INPUT_USD_PER_MILLION = 8.0
 OPENAI_IMAGE_OUTPUT_USD_PER_MILLION = 30.0
 COMPANY_CREATIVE_HARD_CEILING_USD = 300.0
 ALERT_INTERVAL_USD = 100
+DEFAULT_MAX_REQUESTS_PER_MINUTE = 10
 PURPOSES = ("thumbnail", "slide", "email", "sms", "website", "test")
 ASPECT_RATIOS = tuple(APPROVED_SIZES)
 
@@ -86,10 +89,26 @@ def _monthly_budget_usd() -> float:
 
 
 def _api_key() -> str:
-    key = os.environ.get("OPENAI_API_KEY")
+    key = os.environ.get("IMAGE_GENERATOR_OPENAI_API_KEY") or os.environ.get(
+        "OPENAI_API_KEY"
+    )
     if not key:
         raise RuntimeError("OPENAI_API_KEY is not configured for this server.")
     return key
+
+
+def _max_requests_per_minute() -> int:
+    value = int(
+        os.environ.get(
+            "IMAGE_GENERATOR_MAX_REQUESTS_PER_MINUTE",
+            str(DEFAULT_MAX_REQUESTS_PER_MINUTE),
+        )
+    )
+    if value < 1 or value > 60:
+        raise RuntimeError(
+            "IMAGE_GENERATOR_MAX_REQUESTS_PER_MINUTE must be between 1 and 60."
+        )
+    return value
 
 
 def _key_id() -> str:
@@ -152,6 +171,22 @@ def _deliver_alert(payload: dict[str, object]) -> None:
     alert_file = STATE_DIR / "spend-alerts.jsonl"
     with alert_file.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, sort_keys=True) + "\n")
+    if sys.platform == "darwin":
+        threshold = int(payload.get("threshold_usd") or 0)
+        status = str(payload.get("status") or "reached")
+        subprocess.run(
+            [
+                "osascript",
+                "-e",
+                (
+                    'display notification "Creative image spend '
+                    f'${threshold} {status}." with title "Image Generator budget"'
+                ),
+            ],
+            check=False,
+            capture_output=True,
+            timeout=10,
+        )
     webhook = os.environ.get("IMAGE_GENERATOR_ALERT_WEBHOOK_URL", "").strip()
     if not webhook:
         return
@@ -210,6 +245,20 @@ def _reserve(purpose: str, aspect_ratio: str, quality: str = DEFAULT_QUALITY) ->
     estimated_cost = ESTIMATED_COST_USD_BY_QUALITY[quality]
     with _connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
+        one_minute_ago = datetime.fromtimestamp(time.time() - 60, UTC).isoformat()
+        recent_requests = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM usage WHERE created_at >= ? "
+                "AND status IN ('reserved', 'succeeded', 'failed')",
+                (one_minute_ago,),
+            ).fetchone()[0]
+        )
+        max_requests = _max_requests_per_minute()
+        if recent_requests >= max_requests:
+            raise RuntimeError(
+                "Creative image burst limit reached: "
+                f"{recent_requests} requests in the last minute; limit is {max_requests}."
+            )
         spent = float(
             conn.execute(
                 "SELECT COALESCE(SUM(estimated_cost_usd), 0) FROM usage "
@@ -277,12 +326,12 @@ def _usage_report() -> dict[str, object]:
     with _connect() as conn:
         rows = conn.execute(
             """
-            SELECT purpose, model, quality, resolution, COUNT(*),
+            SELECT caller, key_id, provider, purpose, model, quality, resolution, COUNT(*),
                    ROUND(SUM(estimated_cost_usd), 4),
                    ROUND(SUM(COALESCE(actual_cost_usd, 0)), 4)
             FROM usage WHERE month=?
-            GROUP BY purpose, model, quality, resolution
-            ORDER BY purpose, model, quality
+            GROUP BY caller, key_id, provider, purpose, model, quality, resolution
+            ORDER BY caller, purpose, model, quality
             """,
             (_month(),),
         ).fetchall()
@@ -298,13 +347,16 @@ def _usage_report() -> dict[str, object]:
         "budget_usd": _monthly_budget_usd(),
         "groups": [
             {
-                "purpose": row[0],
-                "model": row[1],
-                "quality": row[2],
-                "resolution": row[3],
-                "requests": row[4],
-                "estimated_cost_usd": row[5],
-                "actual_cost_usd": row[6],
+                "caller": row[0],
+                "key_id": row[1],
+                "provider": row[2],
+                "purpose": row[3],
+                "model": row[4],
+                "quality": row[5],
+                "resolution": row[6],
+                "requests": row[7],
+                "estimated_cost_usd": row[8],
+                "actual_cost_usd": row[9],
             }
             for row in rows
         ],

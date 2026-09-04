@@ -37,3 +37,17 @@ def test_xai_actual_cost_uses_provider_ticks() -> None:
     assert benchmark._actual_cost(
         profile, {"usage": {"cost_in_usd_ticks": 400_000_000}}
     ) == 0.04
+
+
+def test_google_actual_cost_uses_official_token_rates() -> None:
+    profile = benchmark.PROFILES["google-gemini-flash-lite-1k"]
+    metadata = {
+        "usage": {
+            "prompt_token_count": 1410,
+            "candidates_token_count": 1456,
+            "candidates_tokens_details": [
+                {"modality": "IMAGE", "token_count": 1120}
+            ],
+        }
+    }
+    assert benchmark._actual_cost(profile, metadata) == 0.034457

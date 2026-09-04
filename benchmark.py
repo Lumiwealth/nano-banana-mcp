@@ -11,15 +11,19 @@ import argparse
 import base64
 import hashlib
 import json
+import mimetypes
 import os
 import random
 import time
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
 from urllib.request import urlopen
 
 import httpx
+from google import genai
+from google.genai import types as genai_types
 from openai import OpenAI
 from PIL import Image
 
@@ -29,6 +33,12 @@ PROFILES: dict[str, dict[str, object]] = {
     },
     "openai-gpt-image-2-medium": {
         "provider": "openai", "model": "gpt-image-2", "quality": "medium", "max_cost": 0.10,
+    },
+    "google-gemini-flash-lite-1k": {
+        "provider": "google",
+        "model": "gemini-3.1-flash-lite-image",
+        "quality": "1K",
+        "max_cost": 0.04,
     },
     "xai-grok-imagine-2-low": {
         "provider": "xai", "model": "grok-imagine-image-2.0", "quality": "low", "max_cost": 0.04,
@@ -50,6 +60,9 @@ PROFILES: dict[str, dict[str, object]] = {
 OPENAI_TEXT_INPUT_USD_PER_MILLION = 5.0
 OPENAI_IMAGE_INPUT_USD_PER_MILLION = 8.0
 OPENAI_IMAGE_OUTPUT_USD_PER_MILLION = 30.0
+GOOGLE_INPUT_USD_PER_MILLION = 0.25
+GOOGLE_TEXT_OUTPUT_USD_PER_MILLION = 1.50
+GOOGLE_IMAGE_OUTPUT_USD_PER_MILLION = 30.0
 
 
 def _response_bytes(item: object) -> bytes:
@@ -63,15 +76,53 @@ def _response_bytes(item: object) -> bytes:
         return response.read()
 
 
-def _openai_generate(profile: dict[str, object], prompt: str) -> tuple[bytes, dict]:
-    response = OpenAI(api_key=os.environ["OPENAI_API_KEY"]).images.generate(
-        model=str(profile["model"]),
-        prompt=prompt,
-        quality=str(profile["quality"]),
-        size="1536x1024",
-        output_format="png",
-    )
+def _openai_generate(
+    profile: dict[str, object], prompt: str, reference_images: tuple[Path, ...]
+) -> tuple[bytes, dict]:
+    common = {
+        "model": str(profile["model"]),
+        "prompt": prompt,
+        "quality": str(profile["quality"]),
+        "size": "1536x1024",
+        "output_format": "png",
+    }
+    client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+    if reference_images:
+        with ExitStack() as stack:
+            files = [stack.enter_context(path.open("rb")) for path in reference_images]
+            response = client.images.edit(image=files, **common)
+    else:
+        response = client.images.generate(**common)
     return _response_bytes(response.data[0]), response.model_dump(exclude={"data"})
+
+
+def _google_generate(
+    profile: dict[str, object], prompt: str, reference_images: tuple[Path, ...]
+) -> tuple[bytes, dict]:
+    contents: list[object] = []
+    for path in reference_images:
+        mime_type = mimetypes.guess_type(path.name)[0] or "image/png"
+        contents.append(
+            genai_types.Part.from_bytes(data=path.read_bytes(), mime_type=mime_type)
+        )
+    contents.append(prompt)
+    client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+    response = client.models.generate_content(
+        model=str(profile["model"]),
+        contents=contents,
+        config=genai_types.GenerateContentConfig(
+            response_modalities=["IMAGE", "TEXT"],
+            image_config=genai_types.ImageConfig(
+                aspect_ratio="16:9", image_size="1K"
+            ),
+        ),
+    )
+    parts = response.candidates[0].content.parts if response.candidates else []
+    for part in parts:
+        if part.inline_data and part.inline_data.data:
+            usage = response.usage_metadata.model_dump() if response.usage_metadata else {}
+            return bytes(part.inline_data.data), {"usage": usage}
+    raise RuntimeError("Google returned no image data")
 
 
 def _xai_generate(profile: dict[str, object], prompt: str) -> tuple[bytes, dict]:
@@ -122,10 +173,14 @@ def _together_generate(profile: dict[str, object], prompt: str) -> tuple[bytes, 
     return data, {key: payload.get(key) for key in ("id", "model", "request_id") if payload.get(key)}
 
 
-def _generate(profile: dict[str, object], prompt: str) -> tuple[bytes, dict]:
+def _generate(
+    profile: dict[str, object], prompt: str, reference_images: tuple[Path, ...] = ()
+) -> tuple[bytes, dict]:
     provider = profile["provider"]
     if provider == "openai":
-        return _openai_generate(profile, prompt)
+        return _openai_generate(profile, prompt, reference_images)
+    if provider == "google":
+        return _google_generate(profile, prompt, reference_images)
     if provider == "xai":
         return _xai_generate(profile, prompt)
     if provider == "together":
@@ -155,7 +210,44 @@ def _actual_cost(profile: dict[str, object], metadata: dict) -> float:
         ticks = ((metadata.get("usage") or {}).get("cost_in_usd_ticks"))
         if ticks is not None:
             return round(float(ticks) / 10_000_000_000, 6)
+    if profile["provider"] == "google":
+        usage = metadata.get("usage") or {}
+        prompt_tokens = int(usage.get("prompt_token_count") or 0)
+        candidate_tokens = int(usage.get("candidates_token_count") or 0)
+        image_output_tokens = sum(
+            int(detail.get("token_count") or 0)
+            for detail in usage.get("candidates_tokens_details") or []
+            if str(detail.get("modality") or "").upper() == "IMAGE"
+        )
+        text_output_tokens = max(0, candidate_tokens - image_output_tokens)
+        return round(
+            (
+                prompt_tokens * GOOGLE_INPUT_USD_PER_MILLION
+                + text_output_tokens * GOOGLE_TEXT_OUTPUT_USD_PER_MILLION
+                + image_output_tokens * GOOGLE_IMAGE_OUTPUT_USD_PER_MILLION
+            )
+            / 1_000_000,
+            6,
+        )
     return round(float(profile["max_cost"]), 6)
+
+
+def _provider_label(profile: dict[str, object]) -> str:
+    if profile["provider"] == "openai":
+        return "GPT IMAGE 2 LOW"
+    if profile["provider"] == "google":
+        return "GEMINI FLASH LITE 1K"
+    return str(profile["model"]).upper()
+
+
+def _labeled_prompt(prompt: str, profile: dict[str, object]) -> str:
+    return (
+        f"{prompt}\n\n"
+        "Required comparison label: add one small, clean, unobtrusive badge in the "
+        f'bottom-right corner containing exactly: "{_provider_label(profile)}". '
+        "This badge is allowed in addition to the requested headline. Do not add any "
+        "other words. Render the badge as an integrated part of the generated image."
+    )
 
 
 def main() -> int:
@@ -168,25 +260,44 @@ def main() -> int:
     args = parser.parse_args()
     prompts = json.loads(args.prompts.read_text(encoding="utf-8"))
     selected_prompts = {
-        prompt_id: prompt
+        prompt_id: (
+            prompt if isinstance(prompt, dict) else {"prompt": prompt, "reference_images": []}
+        )
         for prompt_id, prompt in prompts.items()
         if args.prompt_ids is None or prompt_id in args.prompt_ids
     }
     if args.prompt_ids is not None and set(args.prompt_ids) != set(selected_prompts):
         raise RuntimeError("One or more requested prompt IDs do not exist")
-    jobs = [(prompt_id, prompt, name) for prompt_id, prompt in selected_prompts.items() for name in args.profiles]
-    maximum = sum(float(PROFILES[name]["max_cost"]) for _, _, name in jobs)
+    jobs = [
+        (
+            prompt_id,
+            str(prompt["prompt"]),
+            tuple(Path(path).expanduser().resolve() for path in prompt.get("reference_images", [])),
+            name,
+        )
+        for prompt_id, prompt in selected_prompts.items()
+        for name in args.profiles
+    ]
+    missing_references = sorted(
+        str(path)
+        for _, _, references, _ in jobs
+        for path in references
+        if not path.is_file()
+    )
+    if missing_references:
+        raise RuntimeError(f"Reference images do not exist: {missing_references}")
+    maximum = sum(float(PROFILES[name]["max_cost"]) for _, _, _, name in jobs)
     if maximum > args.max_spend:
         raise RuntimeError(f"Refusing benchmark: maximum ${maximum:.4f} exceeds ${args.max_spend:.2f}")
 
     missing = sorted(
         {
-            {"openai": "OPENAI_API_KEY", "xai": "XAI_API_KEY", "together": "TOGETHER_API_KEY"}[
+            {"openai": "OPENAI_API_KEY", "google": "GOOGLE_API_KEY", "xai": "XAI_API_KEY", "together": "TOGETHER_API_KEY"}[
                 str(PROFILES[name]["provider"])
             ]
-            for _, _, name in jobs
+            for _, _, _, name in jobs
             if not os.environ.get(
-                {"openai": "OPENAI_API_KEY", "xai": "XAI_API_KEY", "together": "TOGETHER_API_KEY"}[
+                {"openai": "OPENAI_API_KEY", "google": "GOOGLE_API_KEY", "xai": "XAI_API_KEY", "together": "TOGETHER_API_KEY"}[
                     str(PROFILES[name]["provider"])
                 ]
             )
@@ -211,7 +322,7 @@ def main() -> int:
     completed = {(row["prompt_id"], row["model"]) for row in private}
     spent = sum(float(row["maximum_cost_usd"]) for row in private)
     actual_spent = sum(float(row["actual_cost_usd"]) for row in private)
-    for prompt_id, prompt, profile_name in jobs:
+    for prompt_id, prompt, reference_images, profile_name in jobs:
         profile = PROFILES[profile_name]
         if (prompt_id, profile["model"]) in completed:
             continue
@@ -219,12 +330,14 @@ def main() -> int:
         if spent + estimated > args.max_spend:
             raise RuntimeError("Runtime spend ceiling would be exceeded")
         started = time.monotonic()
-        data, metadata = _generate(profile, prompt)
+        data, metadata = _generate(
+            profile, _labeled_prompt(prompt, profile), reference_images
+        )
         elapsed = round(time.monotonic() - started, 3)
         spent += estimated
         actual = _actual_cost(profile, metadata)
         actual_spent += actual
-        label = labels[(prompt_id, prompt, profile_name)]
+        label = labels[(prompt_id, prompt, reference_images, profile_name)]
         output = args.output_dir / f"{prompt_id}-{label}.png"
         output.write_bytes(data)
         with Image.open(BytesIO(data)) as image:
@@ -246,6 +359,7 @@ def main() -> int:
                 "provider": profile["provider"],
                 "model": profile["model"],
                 "quality": profile.get("quality"),
+                "reference_images": [str(path) for path in reference_images],
                 "maximum_cost_usd": estimated,
                 "actual_cost_usd": actual,
                 "response_metadata": metadata,

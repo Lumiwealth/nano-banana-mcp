@@ -89,6 +89,25 @@ def test_budget_must_stay_within_company_creative_ceiling(monkeypatch) -> None:
         server._monthly_budget_usd()
 
 
+def test_burst_limit_rejects_runaway_generation(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(server, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(server, "LEDGER_PATH", tmp_path / "usage.sqlite3")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("IMAGE_GENERATOR_MAX_REQUESTS_PER_MINUTE", "2")
+    first = server._reserve("thumbnail", "16:9")
+    server._finish(first, elapsed_ms=1, actual_cost_usd=0.005, error=None)
+    second = server._reserve("thumbnail", "16:9")
+    server._finish(second, elapsed_ms=1, actual_cost_usd=0.005, error=None)
+    with pytest.raises(RuntimeError, match="burst limit"):
+        server._reserve("thumbnail", "16:9")
+
+
+def test_dedicated_image_key_takes_precedence(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "shared-key")
+    monkeypatch.setenv("IMAGE_GENERATOR_OPENAI_API_KEY", "dedicated-key")
+    assert server._api_key() == "dedicated-key"
+
+
 def test_each_hundred_dollar_alert_is_recorded_once(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(server, "STATE_DIR", tmp_path)
     monkeypatch.setattr(server, "LEDGER_PATH", tmp_path / "usage.sqlite3")
@@ -106,6 +125,63 @@ def test_each_hundred_dollar_alert_is_recorded_once(tmp_path, monkeypatch) -> No
         ).fetchall()
     assert alerts == [(100,)]
     assert len((tmp_path / "spend-alerts.jsonl").read_text().splitlines()) == 1
+
+
+def test_alert_webhook_delivery_is_attempted(tmp_path, monkeypatch) -> None:
+    delivered: list[object] = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def fake_urlopen(request, timeout):
+        delivered.append((request, timeout))
+        return Response()
+
+    monkeypatch.setattr(server, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(server.sys, "platform", "linux")
+    monkeypatch.setenv("IMAGE_GENERATOR_ALERT_WEBHOOK_URL", "https://alerts.example.test")
+    monkeypatch.setattr(server, "urlopen", fake_urlopen)
+    server._deliver_alert({"type": "test", "threshold_usd": 100})
+
+    assert len(delivered) == 1
+    request, timeout = delivered[0]
+    assert request.full_url == "https://alerts.example.test"
+    assert timeout == 10
+    assert b'"threshold_usd": 100' in request.data
+
+
+def test_macos_alert_delivery_is_attempted(tmp_path, monkeypatch) -> None:
+    delivered: list[list[str]] = []
+
+    def fake_run(command, **_kwargs):
+        delivered.append(command)
+
+    monkeypatch.setattr(server, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(server.sys, "platform", "darwin")
+    monkeypatch.setattr(server.subprocess, "run", fake_run)
+    monkeypatch.delenv("IMAGE_GENERATOR_ALERT_WEBHOOK_URL", raising=False)
+    server._deliver_alert({"type": "test", "threshold_usd": 100, "status": "reached"})
+
+    assert delivered[0][:2] == ["osascript", "-e"]
+    assert "$100 reached" in delivered[0][2]
+
+
+def test_usage_report_groups_by_caller_and_key_identifier(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(server, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(server, "LEDGER_PATH", tmp_path / "usage.sqlite3")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    reservation_id = server._reserve("thumbnail", "16:9")
+    server._finish(reservation_id, elapsed_ms=1, actual_cost_usd=0.005, error=None)
+
+    group = server._usage_report()["groups"][0]
+    assert group["caller"] == server.CALLER
+    assert group["key_id"] == server._key_id()
+    assert group["provider"] == "openai"
+    assert group["purpose"] == "thumbnail"
 
 
 def test_actual_cost_uses_gpt_image_2_token_rates() -> None:
