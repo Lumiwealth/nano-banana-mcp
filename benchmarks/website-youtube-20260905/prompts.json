@@ -1,0 +1,83 @@
+{
+  "newsletter-qqq-casino": {
+    "aspect_ratio": "16:9",
+    "reference_images": [
+      "/Users/robertgrzesik/Development/botspot_node/assets/brand/botspot_vertical_mascot_dark.png"
+    ],
+    "prompt": "Use case: editorial newsletter illustration. Subject: BotSpot mascot Spot wearing a casino dealer visor at a poker table, studying three visually identical stacks of Nasdaq-100 ETF-style poker chips representing BlackRock, State Street, and Invesco competition. Vegas neon glow, dramatic but playful. Style: clean modern magazine-cover illustration. Composition: wide 16:9 landscape; exactly one Spot mascot is the primary actor. Match the supplied Spot reference exactly: white/silver robot body, orange goggle-eyes, orange antenna and chest chip, teal joints. Palette: dark navy #0a1628 with cyan #00bcd4 accents and restrained orange highlights. Constraints: no readable text, no logos, no watermarks, no ticker symbols, no humans, no copyrighted characters, exactly one robot."
+  },
+  "newsletter-fed-podium": {
+    "aspect_ratio": "16:9",
+    "reference_images": [
+      "/Users/robertgrzesik/Development/botspot_node/assets/brand/botspot_vertical_mascot_dark.png"
+    ],
+    "prompt": "Use case: editorial newsletter illustration. Subject: BotSpot mascot Spot standing at a central-bank-style press briefing lectern, glancing wryly toward four conspicuously empty official chairs while market lights flicker behind him. The scene communicates an uncertain rate decision without making a financial claim. Style: clean modern magazine-cover illustration, clever and editorial rather than childish. Composition: wide 16:9 landscape; exactly one Spot mascot is the primary actor. Match the supplied Spot reference exactly: white/silver robot body, orange goggle-eyes, orange antenna and chest chip, teal joints. Palette: dark navy #0a1628 with cyan #00bcd4 accents and restrained orange highlights. Constraints: no readable text, no logos, no watermarks, no ticker symbols, no humans, no copyrighted characters, exactly one robot."
+  },
+  "newsletter-backtest-lab": {
+    "aspect_ratio": "16:9",
+    "reference_images": [
+      "/Users/robertgrzesik/Development/botspot_node/assets/brand/botspot_vertical_mascot_dark.png"
+    ],
+    "prompt": "Use case: editorial newsletter illustration. Subject: BotSpot mascot Spot in a white lab coat and safety goggles, holding a clipboard beside a transparent experiment chamber containing a glowing miniature market chart; the mood is careful testing, not guaranteed results. Style: clean modern financial magazine illustration with polished depth and readable visual storytelling. Composition: wide 16:9 landscape; exactly one Spot mascot is the primary actor. Match the supplied Spot reference exactly: white/silver robot body, orange goggle-eyes, orange antenna and chest chip, teal joints. Palette: dark navy #0a1628 with cyan #00bcd4 accents and restrained orange highlights. Constraints: no readable text, no logos, no watermarks, no ticker symbols, no humans, no copyrighted characters, exactly one robot."
+  },
+  "strategy-sma-crossover": {
+    "aspect_ratio": "16:9",
+    "reference_images": [
+      "/Users/robertgrzesik/Development/botspot_node/assets/brand/botspot_vertical_mascot_dark.png"
+    ],
+    "prompt": "Draw this strategy infographic exactly as described. Wide 16:9 landscape, titleless, dark navy/black background with subtle orange circuit glow. Main visual: a professional TradingView-style SPY candlestick chart with two clearly distinguished moving-average lines labeled exactly '50-DAY SMA' and '200-DAY SMA'. Show a green buy arrow at a realistic chart low where the 50-day line crosses above the 200-day line, and a red exit arrow at a later realistic chart high where it crosses below. Add one compact side legend with exactly: '1  WATCH THE CROSS', '2  BUY ABOVE', '3  EXIT BELOW'. Put one small BotSpot robot in the bottom-right studying the crossing lines; match the supplied robot reference: white/silver body, orange goggle-eyes, orange antenna and chest chip, teal joints. Render 'BotSpot.trade' once as small white text in the bottom-right. Constraints: no giant title, no header banner, no invented performance numbers, no extra tickers, no humans, exactly one robot, no watermark."
+  },
+  "strategy-disclosure-follower": {
+    "aspect_ratio": "16:9",
+    "reference_images": [
+      "/Users/robertgrzesik/Development/botspot_node/assets/brand/botspot_vertical_mascot_dark.png"
+    ],
+    "prompt": "Draw this strategy infographic exactly as described. Wide 16:9 landscape, titleless, dark navy/black background with subtle orange circuit glow. Use exactly four large rounded cards arranged left to right with exactly one thick orange arrow between adjacent cards. Each card has one simple icon above its label. Card text, verbatim: '1  READ TRADE REPORTS' with filing papers icon; '2  KEEP REPORTED BUYS' with magnifying glass icon; '3  BUY UP TO 8' with basket icon; '4  SELL AFTER 90 DAYS' with calendar icon. Put one small BotSpot robot in the bottom-right reviewing a stack of public filing papers; match the supplied robot reference: white/silver body, orange goggle-eyes, orange antenna and chest chip, teal joints. Render 'BotSpot.trade' once as small white text in the bottom-right. Constraints: no giant title, no header banner, no return arrows, no connector web, no stock recommendations, no performance figures, no humans, exactly one robot, no watermark."
+  },
+  "strategy-covered-call-wheel": {
+    "aspect_ratio": "16:9",
+    "reference_images": [
+      "/Users/robertgrzesik/Development/botspot_node/assets/brand/botspot_vertical_mascot_dark.png"
+    ],
+    "prompt": "Draw this strategy infographic exactly as described. Wide 16:9 landscape, titleless, dark navy/black background with subtle orange circuit glow. Use exactly four large rounded cards around one clean clockwise loop arrow. Each card has one simple icon above its label. Card text, verbatim and clockwise: '1  KEEP CASH READY' with cash-safe icon; '2  SELL A PUT' with option-ticket icon; '3  IF WE OWN SHARES' with stock-certificate icon; '4  SELL A COVERED CALL' with option-ticket icon. Add one tiny label near the loop: 'CHECKS WEEKLY'. Put one small BotSpot robot in the bottom-right holding two option tickets; match the supplied robot reference: white/silver body, orange goggle-eyes, orange antenna and chest chip, teal joints. Render 'BotSpot.trade' once as small white text in the bottom-right. Constraints: no giant title, no header banner, exactly one continuous loop arrow, no loose arrows, no payoff claims, no performance figures, no humans, exactly one robot, no watermark."
+  },
+  "marketplace-momentum-rocket": {
+    "aspect_ratio": "1:1",
+    "reference_images": [],
+    "prompt": "Use case: marketplace strategy hero image. A single bold 3D hero object: a polished futuristic rocket launching diagonally through luminous clouds of stylized gold coins, with an electric lightning bolt energizing the engine trail. Deep-space gradient background with vibrant electric purple, hot pink, cyan, and neon-green accents. Dramatic volumetric god rays, lens flares, glowing rim light, ultra-sharp premium app-store or AAA game-icon finish. Square 1:1 composition with one unmistakable focal object and strong small-size readability. Constraints: absolutely no text, numbers, words, charts, graphs, logos, UI, watermarks, human faces, people, or extra focal objects."
+  },
+  "marketplace-options-wheel": {
+    "aspect_ratio": "1:1",
+    "reference_images": [],
+    "prompt": "Use case: marketplace strategy hero image. A single bold 3D hero object: an elegant futuristic options wheel shaped like a premium roulette mechanism, with abstract unlabeled option tickets and a small stream of glowing coin-like particles orbiting the rim. Deep-space gradient background with vibrant electric purple, hot pink, cyan, and neon-green accents. Dramatic volumetric god rays, lens flares, glowing rim light, ultra-sharp premium app-store or AAA game-icon finish. Square 1:1 composition with one unmistakable focal object and strong small-size readability. Constraints: absolutely no text, numbers, words, charts, graphs, logos, UI, watermarks, human faces, people, gambling branding, or extra focal objects."
+  },
+  "marketplace-value-scales": {
+    "aspect_ratio": "1:1",
+    "reference_images": [],
+    "prompt": "Use case: marketplace strategy hero image. A single bold 3D hero object: ancient golden balance scales weighing a rough uncut gemstone against a stack of plain unlabeled coins, perfectly balanced, symbolizing disciplined valuation. Deep-space gradient background with vibrant electric purple, hot pink, cyan, and neon-green accents. Dramatic volumetric god rays, lens flares, glowing rim light, ultra-sharp premium app-store or AAA game-icon finish. Square 1:1 composition with one unmistakable focal object and strong small-size readability. Constraints: absolutely no text, numbers, words, charts, graphs, logos, UI, watermarks, human faces, people, currency symbols, or extra focal objects."
+  },
+  "youtube-ai-self-fix-face": {
+    "aspect_ratio": "16:9",
+    "reference_images": [
+      "/Users/robertgrzesik/Development/botspot-media-studio/data/originals/verified-presenters/rob-reference.jpg"
+    ],
+    "prompt": "Use case: YouTube thumbnail for a real video about an AI trading bot identifying and fixing a bug in its own code. Preserve the supplied founder's identity faithfully—same recognizable face, hair, and age—with a natural surprised but credible expression, not caricatured, waxy, shiny, or over-retouched. Show him large on one side, looking toward a glowing code editor and trading chart on the other. High contrast, dark navy background, cyan and orange energy, clean cinematic lighting, simple composition readable on a television. Render exactly one headline, verbatim: 'AI FIXED ITS OWN CODE'. Use very large condensed bold sans-serif type, no dangling phrase, no other words. Constraints: 16:9 landscape, no fake people, no identity drift, no logos, no watermark, no profit claims, no duplicated face, no clutter."
+  },
+  "youtube-claude-broker-face": {
+    "aspect_ratio": "16:9",
+    "reference_images": [
+      "/Users/robertgrzesik/Development/botspot-media-studio/data/originals/claude-thumbnails-founder-tradingview-20260824/source-frame-rob-direct-1920x1080.png"
+    ],
+    "prompt": "Use case: YouTube thumbnail for a real founder video about connecting Claude to a broker workflow and reviewing an AI-built trading indicator. Preserve the supplied founder's identity faithfully—same recognizable face, hair, and age—with a focused, slightly astonished expression, not caricatured, waxy, shiny, or over-retouched. Show him large on one side, pointing toward a luminous broker connection node feeding a clean trading chart on the other. High contrast, dark navy background, cyan and orange glow, premium cinematic lighting, simple composition readable on a television. Render exactly one headline, verbatim: 'I GAVE CLAUDE MY BROKER'. Use very large condensed bold sans-serif type and no other words. Constraints: 16:9 landscape, no fake people, no identity drift, no logos, no watermark, no profit claims, no duplicated face, no clutter."
+  },
+  "youtube-ai-finance-no-face": {
+    "aspect_ratio": "16:9",
+    "reference_images": [],
+    "prompt": "Use case: YouTube thumbnail for a real educational video about AI agents increasingly automating financial analysis and operational decisions. No people. Use a single striking visual metaphor: a luminous AI core connected to a small number of clear finance icons and one rising market interface, with strong depth and cinematic energy. High contrast, nearly black navy background, electric cyan, orange, and green accents, simple composition readable on a television. Render exactly one headline, verbatim: 'AI AGENTS WILL CONTROL YOUR FINANCES'. Use very large condensed bold sans-serif type and no other words. Constraints: 16:9 landscape, no humans, no logos, no watermark, no guaranteed-return implication, no clutter, no tiny labels."
+  },
+  "youtube-hedge-fund-value-no-face": {
+    "aspect_ratio": "16:9",
+    "reference_images": [],
+    "prompt": "Use case: YouTube thumbnail for a real educational video explaining how hedge funds assess the value of technology companies. No people. Use one clear visual metaphor: a glowing AI chip at the center receiving a few clean financial inputs and producing an abstract valuation scale beside a subtle market chart. High contrast, nearly black navy background, electric cyan, orange, and green accents, simple composition readable on a television. Render exactly one headline, verbatim: 'HOW HEDGE FUNDS VALUE TECH'. Use very large condensed bold sans-serif type and no other words. Constraints: 16:9 landscape, no humans, no logos, no watermark, no performance claims, no clutter, no tiny labels."
+  }
+}

@@ -51,3 +51,27 @@ def test_google_actual_cost_uses_official_token_rates() -> None:
         }
     }
     assert benchmark._actual_cost(profile, metadata) == 0.034457
+
+
+def test_google_actual_cost_accepts_sdk_enum_string() -> None:
+    profile = benchmark.PROFILES["google-gemini-flash-lite-1k"]
+    metadata = {
+        "usage": {
+            "prompt_token_count": 1410,
+            "candidates_token_count": 1456,
+            "candidates_tokens_details": [
+                {"modality": "MediaModality.IMAGE", "token_count": 1120}
+            ],
+        }
+    }
+    assert benchmark._actual_cost(profile, metadata) == 0.034457
+
+
+def test_benchmark_supports_only_approved_aspect_ratios() -> None:
+    profile = benchmark.PROFILES["openai-gpt-image-2-low"]
+    try:
+        benchmark._openai_generate(profile, "test", (), "4:3")
+    except ValueError as error:
+        assert str(error) == "Unsupported aspect ratio: 4:3"
+    else:
+        raise AssertionError("unsupported aspect ratio should fail before any provider call")

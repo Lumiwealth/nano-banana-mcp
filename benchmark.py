@@ -77,13 +77,19 @@ def _response_bytes(item: object) -> bytes:
 
 
 def _openai_generate(
-    profile: dict[str, object], prompt: str, reference_images: tuple[Path, ...]
+    profile: dict[str, object],
+    prompt: str,
+    reference_images: tuple[Path, ...],
+    aspect_ratio: str,
 ) -> tuple[bytes, dict]:
+    sizes = {"16:9": "1536x864", "1:1": "1024x1024", "9:16": "864x1536"}
+    if aspect_ratio not in sizes:
+        raise ValueError(f"Unsupported aspect ratio: {aspect_ratio}")
     common = {
         "model": str(profile["model"]),
         "prompt": prompt,
         "quality": str(profile["quality"]),
-        "size": "1536x1024",
+        "size": sizes[aspect_ratio],
         "output_format": "png",
     }
     client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
@@ -97,7 +103,10 @@ def _openai_generate(
 
 
 def _google_generate(
-    profile: dict[str, object], prompt: str, reference_images: tuple[Path, ...]
+    profile: dict[str, object],
+    prompt: str,
+    reference_images: tuple[Path, ...],
+    aspect_ratio: str,
 ) -> tuple[bytes, dict]:
     contents: list[object] = []
     for path in reference_images:
@@ -113,7 +122,7 @@ def _google_generate(
         config=genai_types.GenerateContentConfig(
             response_modalities=["IMAGE", "TEXT"],
             image_config=genai_types.ImageConfig(
-                aspect_ratio="16:9", image_size="1K"
+                aspect_ratio=aspect_ratio, image_size="1K"
             ),
         ),
     )
@@ -174,13 +183,16 @@ def _together_generate(profile: dict[str, object], prompt: str) -> tuple[bytes, 
 
 
 def _generate(
-    profile: dict[str, object], prompt: str, reference_images: tuple[Path, ...] = ()
+    profile: dict[str, object],
+    prompt: str,
+    reference_images: tuple[Path, ...] = (),
+    aspect_ratio: str = "16:9",
 ) -> tuple[bytes, dict]:
     provider = profile["provider"]
     if provider == "openai":
-        return _openai_generate(profile, prompt, reference_images)
+        return _openai_generate(profile, prompt, reference_images, aspect_ratio)
     if provider == "google":
-        return _google_generate(profile, prompt, reference_images)
+        return _google_generate(profile, prompt, reference_images, aspect_ratio)
     if provider == "xai":
         return _xai_generate(profile, prompt)
     if provider == "together":
@@ -217,7 +229,7 @@ def _actual_cost(profile: dict[str, object], metadata: dict) -> float:
         image_output_tokens = sum(
             int(detail.get("token_count") or 0)
             for detail in usage.get("candidates_tokens_details") or []
-            if str(detail.get("modality") or "").upper() == "IMAGE"
+            if str(detail.get("modality") or "").upper().split(".")[-1] == "IMAGE"
         )
         text_output_tokens = max(0, candidate_tokens - image_output_tokens)
         return round(
@@ -257,6 +269,11 @@ def main() -> int:
     parser.add_argument("--max-spend", type=float, default=2.0)
     parser.add_argument("--profiles", nargs="+", choices=sorted(PROFILES), default=sorted(PROFILES))
     parser.add_argument("--prompt-ids", nargs="+", default=None)
+    parser.add_argument(
+        "--no-embedded-label",
+        action="store_true",
+        help="Do not ask providers to render a comparison badge inside the image.",
+    )
     args = parser.parse_args()
     prompts = json.loads(args.prompts.read_text(encoding="utf-8"))
     selected_prompts = {
@@ -273,6 +290,7 @@ def main() -> int:
             prompt_id,
             str(prompt["prompt"]),
             tuple(Path(path).expanduser().resolve() for path in prompt.get("reference_images", [])),
+            str(prompt.get("aspect_ratio", "16:9")),
             name,
         )
         for prompt_id, prompt in selected_prompts.items()
@@ -280,13 +298,13 @@ def main() -> int:
     ]
     missing_references = sorted(
         str(path)
-        for _, _, references, _ in jobs
+        for _, _, references, _, _ in jobs
         for path in references
         if not path.is_file()
     )
     if missing_references:
         raise RuntimeError(f"Reference images do not exist: {missing_references}")
-    maximum = sum(float(PROFILES[name]["max_cost"]) for _, _, _, name in jobs)
+    maximum = sum(float(PROFILES[name]["max_cost"]) for _, _, _, _, name in jobs)
     if maximum > args.max_spend:
         raise RuntimeError(f"Refusing benchmark: maximum ${maximum:.4f} exceeds ${args.max_spend:.2f}")
 
@@ -295,7 +313,7 @@ def main() -> int:
             {"openai": "OPENAI_API_KEY", "google": "GOOGLE_API_KEY", "xai": "XAI_API_KEY", "together": "TOGETHER_API_KEY"}[
                 str(PROFILES[name]["provider"])
             ]
-            for _, _, _, name in jobs
+            for _, _, _, _, name in jobs
             if not os.environ.get(
                 {"openai": "OPENAI_API_KEY", "google": "GOOGLE_API_KEY", "xai": "XAI_API_KEY", "together": "TOGETHER_API_KEY"}[
                     str(PROFILES[name]["provider"])
@@ -319,10 +337,27 @@ def main() -> int:
     private: list[dict] = (
         json.loads(private_path.read_text(encoding="utf-8")) if private_path.exists() else []
     )
+    # Recalculate from stored provider usage on resume so pricing fixes repair
+    # the local ledger without repeating paid generations.
+    for row in private:
+        matching_profile = next(
+            (
+                profile
+                for profile in PROFILES.values()
+                if profile["provider"] == row.get("provider")
+                and profile["model"] == row.get("model")
+                and profile.get("quality") == row.get("quality")
+            ),
+            None,
+        )
+        if matching_profile is not None:
+            row["actual_cost_usd"] = _actual_cost(
+                matching_profile, row.get("response_metadata") or {}
+            )
     completed = {(row["prompt_id"], row["model"]) for row in private}
     spent = sum(float(row["maximum_cost_usd"]) for row in private)
     actual_spent = sum(float(row["actual_cost_usd"]) for row in private)
-    for prompt_id, prompt, reference_images, profile_name in jobs:
+    for prompt_id, prompt, reference_images, aspect_ratio, profile_name in jobs:
         profile = PROFILES[profile_name]
         if (prompt_id, profile["model"]) in completed:
             continue
@@ -330,14 +365,15 @@ def main() -> int:
         if spent + estimated > args.max_spend:
             raise RuntimeError("Runtime spend ceiling would be exceeded")
         started = time.monotonic()
+        rendered_prompt = prompt if args.no_embedded_label else _labeled_prompt(prompt, profile)
         data, metadata = _generate(
-            profile, _labeled_prompt(prompt, profile), reference_images
+            profile, rendered_prompt, reference_images, aspect_ratio
         )
         elapsed = round(time.monotonic() - started, 3)
         spent += estimated
         actual = _actual_cost(profile, metadata)
         actual_spent += actual
-        label = labels[(prompt_id, prompt, reference_images, profile_name)]
+        label = labels[(prompt_id, prompt, reference_images, aspect_ratio, profile_name)]
         output = args.output_dir / f"{prompt_id}-{label}.png"
         output.write_bytes(data)
         with Image.open(BytesIO(data)) as image:
@@ -350,6 +386,7 @@ def main() -> int:
             "height": height,
             "elapsed_seconds": elapsed,
             "retries": 0,
+            "aspect_ratio": aspect_ratio,
             "sha256": hashlib.sha256(data).hexdigest(),
         }
         public.append(common)
@@ -378,6 +415,8 @@ def main() -> int:
         "retries": 0,
     }
     (args.output_dir / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+    private_path.write_text(json.dumps(private, indent=2) + "\n", encoding="utf-8")
+    private_path.chmod(0o600)
     print(json.dumps(receipt))
     return 0
 
