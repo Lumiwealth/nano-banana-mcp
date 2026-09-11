@@ -69,3 +69,28 @@ local credential source without copying a raw key into either MCP config:
 ```bash
 IMAGE_GENERATOR_CALLER=creative-image-generator ./run.sh
 ```
+
+## Pending upgrade to GPT Image 2.5 Flare (blocked, 2026-09-11)
+
+Rob asked to move this server from `gpt-image-2` to `gpt-image-2.5-flare`,
+OpenAI's September 8, 2026 release. Flare is the cheaper, faster member of the
+2.5 family, billed at the same per-token rates as GPT Image 2 with roughly half
+the latency, so this is an upgrade with no price increase.
+
+**It is not switched on, because the project cannot call it yet.** A direct
+call returns:
+
+```
+403 model_not_found
+Project `proj_2Sz...` does not have access to model `gpt-image-2.5-flare`
+```
+
+Rob has to grant the project access in the OpenAI dashboard first, under the
+project's model allowlist (Project, then Limits). Organization verification may
+also be required. Once a probe call succeeds, change `APPROVED_MODEL` in
+`server.py`, update the tool description that names GPT Image 2, run the
+tests, and regenerate one asset to compare quality before trusting it for
+customer-facing work.
+
+Do not point `APPROVED_MODEL` at a model the project cannot call. Every image
+tool in every session fails immediately if that happens.
