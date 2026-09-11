@@ -28,7 +28,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 from openai import OpenAI
 
-APPROVED_MODEL = "gpt-image-2"
+APPROVED_MODEL = "gpt-image-2.5-flare"
 DEFAULT_QUALITY = "low"
 ALLOWED_QUALITIES = ("low", "medium")
 SERVER_INSTRUCTIONS = (
@@ -495,7 +495,7 @@ async def list_tools() -> list[Tool]:
             name="generate_image",
             description=(
                 "Generate one image using the approved server-controlled provider, "
-                "GPT Image 2 model, and exact resolution. Quality defaults to low; "
+                "GPT Image 2.5 Flare model, and exact resolution. Quality defaults to low; "
                 "medium is the only allowed upgrade. High/auto quality and model or "
                 "resolution overrides are unavailable. The raw result is saved "
                 "without edits."

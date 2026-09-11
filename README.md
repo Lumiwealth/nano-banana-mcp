@@ -9,7 +9,7 @@ A provider-specific exception requires an explicit request from Rob.
 
 The current containment profile is intentionally strict:
 
-- approved model: `gpt-image-2`
+- approved model: `gpt-image-2.5-flare`
 - server-controlled resolution: exact 16:9, 1:1, or 9:16 sizes
 - default quality: `low`; the only permitted upgrade is `medium`
 - calendar-month creative budget: $100
@@ -70,27 +70,27 @@ local credential source without copying a raw key into either MCP config:
 IMAGE_GENERATOR_CALLER=creative-image-generator ./run.sh
 ```
 
-## Pending upgrade to GPT Image 2.5 Flare (blocked, 2026-09-11)
+## Model upgrade to GPT Image 2.5 Flare (done, 2026-09-11)
 
-Rob asked to move this server from `gpt-image-2` to `gpt-image-2.5-flare`,
-OpenAI's September 8, 2026 release. Flare is the cheaper, faster member of the
-2.5 family, billed at the same per-token rates as GPT Image 2 with roughly half
-the latency, so this is an upgrade with no price increase.
+This server now runs `gpt-image-2.5-flare`, OpenAI's September 8, 2026 model.
+Flare is the cheaper, faster member of the 2.5 family, billed at the same
+per-token rates as GPT Image 2 with roughly half the latency.
 
-**It is not switched on, because the project cannot call it yet.** A direct
-call returns:
+The project could not call it at first:
 
 ```
 403 model_not_found
 Project `proj_2Sz...` does not have access to model `gpt-image-2.5-flare`
 ```
 
-Rob has to grant the project access in the OpenAI dashboard first, under the
-project's model allowlist (Project, then Limits). Organization verification may
-also be required. Once a probe call succeeds, change `APPROVED_MODEL` in
-`server.py`, update the tool description that names GPT Image 2, run the
-tests, and regenerate one asset to compare quality before trusting it for
-customer-facing work.
+The cause was the project's own allowed-models list, which held `gpt-image-2`
+and nothing else. It lives in the OpenAI dashboard under the project, then
+Limits, then Model usage, then Allowed models. Adding `gpt-image-2.5-flare`
+and its dated `gpt-image-2.5-flare-2026-09-08` twin fixed it. The change takes
+roughly half a minute to reach the API, so one probe call can still fail right
+after saving. This is an OpenAI dashboard setting, not Google Cloud.
 
-Do not point `APPROVED_MODEL` at a model the project cannot call. Every image
-tool in every session fails immediately if that happens.
+If a future model swap returns `model_not_found`, check that list first, then
+check that the organization is verified under Organization settings. Never
+point `APPROVED_MODEL` at a model the project cannot call: every image tool in
+every session fails immediately if you do.

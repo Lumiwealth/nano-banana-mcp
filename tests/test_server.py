@@ -32,7 +32,7 @@ def test_schema_forbids_model_resolution_and_unbounded_quality_overrides() -> No
 
 
 def test_only_approved_gpt_image_model_and_fixed_sizes_exist() -> None:
-    assert server.APPROVED_MODEL == "gpt-image-2"
+    assert server.APPROVED_MODEL == "gpt-image-2.5-flare"
     assert server.DEFAULT_QUALITY == "low"
     assert server.ALLOWED_QUALITIES == ("low", "medium")
     assert server.APPROVED_SIZES == {
