@@ -9,7 +9,7 @@ A provider-specific exception requires an explicit request from Rob.
 
 The current containment profile is intentionally strict:
 
-- approved model: `gpt-image-2.5-flare`
+- approved model: `gpt-image-2.5-flare-2026-09-08`
 - server-controlled resolution: exact 16:9, 1:1, or 9:16 sizes
 - default quality: `low`; the only permitted upgrade is `medium`
 - calendar-month creative budget: $100
@@ -89,6 +89,12 @@ Limits, then Model usage, then Allowed models. Adding `gpt-image-2.5-flare`
 and its dated `gpt-image-2.5-flare-2026-09-08` twin fixed it. The change takes
 roughly half a minute to reach the API, so one probe call can still fail right
 after saving. This is an OpenAI dashboard setting, not Google Cloud.
+
+**Pin the dated snapshot, not the alias.** `gpt-image-2.5-flare` answers image
+generations but returns the same 403 on image edits, which is how most of this
+server's real work is done. `gpt-image-2.5-flare-2026-09-08` answers both, so
+that is what `APPROVED_MODEL` holds. Test both endpoints after any model change,
+not just generation.
 
 If a future model swap returns `model_not_found`, check that list first, then
 check that the organization is verified under Organization settings. Never

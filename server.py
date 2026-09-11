@@ -28,7 +28,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 from openai import OpenAI
 
-APPROVED_MODEL = "gpt-image-2.5-flare"
+APPROVED_MODEL = "gpt-image-2.5-flare-2026-09-08"
 DEFAULT_QUALITY = "low"
 ALLOWED_QUALITIES = ("low", "medium")
 SERVER_INSTRUCTIONS = (
