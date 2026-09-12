@@ -46,5 +46,5 @@ def test_cli_has_no_model_or_resolution_override_and_no_auto_quality() -> None:
     assert "model" not in actions
     assert "resolution" not in actions
     quality = next(action for action in cli._parser()._actions if action.dest == "quality")
-    assert tuple(quality.choices) == ("low", "medium", "high")
+    assert tuple(quality.choices) == ("low", "medium", "high", "xhigh", "max")
     assert "auto" not in quality.choices

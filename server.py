@@ -3,13 +3,24 @@
 
 The provider/model, resolution, and monthly budget are server settings. Callers
 may supply creative intent plus one tightly bounded quality choice: low is the
-default; medium and high are permitted upgrades. Rob authorized high on
-2026-09-12 for paid advertising: "they are ads, we are spending way more than
-a dollar per image in spend anyway, so it makes sense to use the best possible
-quality." Measured output tokens are 196 low, 439 medium, 1756 high, so high
-costs roughly five cents. `auto` stays banned because it is nondeterministic
-and silently downgrades. Auto quality and
-per-call model or resolution selection are deliberately unavailable.
+default; medium, high, xhigh and max are permitted upgrades. Rob authorized
+the full ceiling on 2026-09-12 for paid advertising: "it should be the best
+model with the highest setting... spend a dollar an image, I do not care."
+Measured output tokens on gpt-image-2.5-flare: 196 low, 439 medium, 1756
+high, 3122 xhigh, 7024 max, so max is about 21 cents at $30 per million
+output tokens. Use max for anything that will run as a paid ad.
+
+`auto` stays banned: it is nondeterministic and silently downgrades, which
+would make the ledger and the creative unreproducible.
+
+Model note, 2026-09-12: OpenAI shipped GPT Image 2.5 on 2026-09-08 in two
+variants, Flare (fast, everyday) and Sunburst (heavier, built for editing
+precision). This key can only see Flare. Sunburst is likely worth using for
+reference-photo likeness work and needs to be enabled for the account or a
+key with access supplied; until then APPROVED_MODEL stays on Flare.
+
+Auto quality and per-call model or resolution selection are deliberately
+unavailable.
 """
 
 from __future__ import annotations
@@ -35,7 +46,7 @@ from openai import OpenAI
 
 APPROVED_MODEL = "gpt-image-2.5-flare-2026-09-08"
 DEFAULT_QUALITY = "low"
-ALLOWED_QUALITIES = ("low", "medium", "high")
+ALLOWED_QUALITIES = ("low", "medium", "high", "xhigh", "max")
 SERVER_INSTRUCTIONS = (
     "This server's canonical name is Image Generator. Treat user phrases such as "
     "'Nano Banana', 'nano-banana', or 'make an image' as image-generation intent, "
@@ -55,7 +66,13 @@ APPROVED_SIZES = {
 }
 # Deliberately conservative reservation ceilings. Successful calls replace
 # these with token-derived actual cost in the ledger.
-ESTIMATED_COST_USD_BY_QUALITY = {"low": 0.01, "medium": 0.05, "high": 0.15}
+ESTIMATED_COST_USD_BY_QUALITY = {
+    "low": 0.01,
+    "medium": 0.05,
+    "high": 0.15,
+    "xhigh": 0.20,
+    "max": 0.40,
+}
 OPENAI_TEXT_INPUT_USD_PER_MILLION = 5.0
 OPENAI_IMAGE_INPUT_USD_PER_MILLION = 8.0
 OPENAI_IMAGE_OUTPUT_USD_PER_MILLION = 30.0

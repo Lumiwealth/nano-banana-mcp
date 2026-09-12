@@ -22,7 +22,7 @@ def test_schema_forbids_model_resolution_and_unbounded_quality_overrides() -> No
         "aspect_ratio",
         "quality",
     }
-    assert schema["properties"]["quality"]["enum"] == ["low", "medium", "high"]
+    assert schema["properties"]["quality"]["enum"] == ["low", "medium", "high", "xhigh", "max"]
     assert schema["properties"]["quality"]["default"] == "low"
     assert "model" not in schema["properties"]
     assert "resolution" not in schema["properties"]
@@ -34,7 +34,7 @@ def test_schema_forbids_model_resolution_and_unbounded_quality_overrides() -> No
 def test_only_approved_gpt_image_model_and_fixed_sizes_exist() -> None:
     assert server.APPROVED_MODEL == "gpt-image-2.5-flare-2026-09-08"
     assert server.DEFAULT_QUALITY == "low"
-    assert server.ALLOWED_QUALITIES == ("low", "medium", "high")
+    assert server.ALLOWED_QUALITIES == ("low", "medium", "high", "xhigh", "max")
     # This set is a deliberate allowlist, not a default. It exists so an agent
     # cannot invent a resolution escape hatch. 1.91:1 and 4:5 were added on
     # 2026-09-12 at Rob's explicit request, because Google Ads rejects 16:9 as
@@ -211,7 +211,9 @@ def test_medium_and_high_are_recorded_but_auto_is_rejected(tmp_path, monkeypatch
     monkeypatch.setattr(server, "STATE_DIR", tmp_path)
     monkeypatch.setattr(server, "LEDGER_PATH", tmp_path / "usage.sqlite3")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    for quality, expected_estimate in (("medium", 0.05), ("high", 0.15)):
+    for quality, expected_estimate in (
+        ("medium", 0.05), ("high", 0.15), ("xhigh", 0.20), ("max", 0.40)
+    ):
         reservation_id = server._reserve("slide", "16:9", quality)
         with server._connect() as conn:
             recorded, estimate = conn.execute(
