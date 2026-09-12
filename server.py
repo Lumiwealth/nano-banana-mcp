@@ -41,6 +41,12 @@ APPROVED_SIZES = {
     "16:9": "1536x864",
     "1:1": "1024x1024",
     "9:16": "864x1536",
+    # Paid-media ratios. Google Ads rejects 16:9 as a landscape asset
+    # (ASPECT_RATIO_NOT_ALLOWED) and house rules forbid cropping a generated
+    # image by hand, so the generator has to emit these natively.
+    # 1.91:1 is the Google/Meta landscape slot, 4:5 the portrait slot.
+    "1.91:1": "1536x804",
+    "4:5": "1024x1280",
 }
 # Deliberately conservative reservation ceilings. Successful calls replace
 # these with token-derived actual cost in the ledger.

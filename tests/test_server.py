@@ -35,10 +35,17 @@ def test_only_approved_gpt_image_model_and_fixed_sizes_exist() -> None:
     assert server.APPROVED_MODEL == "gpt-image-2.5-flare-2026-09-08"
     assert server.DEFAULT_QUALITY == "low"
     assert server.ALLOWED_QUALITIES == ("low", "medium")
+    # This set is a deliberate allowlist, not a default. It exists so an agent
+    # cannot invent a resolution escape hatch. 1.91:1 and 4:5 were added on
+    # 2026-09-12 at Rob's explicit request, because Google Ads rejects 16:9 as
+    # a landscape asset (ASPECT_RATIO_NOT_ALLOWED) and cropping a generated
+    # image by hand is banned, which left paid media with squares only.
     assert server.APPROVED_SIZES == {
         "16:9": "1536x864",
         "1:1": "1024x1024",
         "9:16": "864x1536",
+        "1.91:1": "1536x804",
+        "4:5": "1024x1280",
     }
     assert "canonical name is Image Generator" in server.SERVER_INSTRUCTIONS
     assert "Nano Banana" in server.SERVER_INSTRUCTIONS

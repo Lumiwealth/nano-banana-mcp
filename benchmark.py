@@ -82,7 +82,7 @@ def _openai_generate(
     reference_images: tuple[Path, ...],
     aspect_ratio: str,
 ) -> tuple[bytes, dict]:
-    sizes = {"16:9": "1536x864", "1:1": "1024x1024", "9:16": "864x1536"}
+    sizes = {"16:9": "1536x864", "1:1": "1024x1024", "9:16": "864x1536", "1.91:1": "1536x804", "4:5": "1024x1280"}
     if aspect_ratio not in sizes:
         raise ValueError(f"Unsupported aspect ratio: {aspect_ratio}")
     common = {
