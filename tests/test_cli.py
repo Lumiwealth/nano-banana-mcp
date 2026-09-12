@@ -37,7 +37,7 @@ def test_cli_locks_model_resolution_and_defaults_to_low(tmp_path, monkeypatch, c
         "quality": "low",
         "references": [],
     }
-    assert payload["model"] == "gpt-image-2.5-flare-2026-09-08"
+    assert payload["model"] == "gpt-image-2.5-sunburst"
     assert payload["resolution"] == "1536x864"
 
 
