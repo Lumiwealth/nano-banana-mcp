@@ -9,7 +9,8 @@ A provider-specific exception requires an explicit request from Rob.
 
 The current containment profile is intentionally strict:
 
-- approved model: `gpt-image-2.5-flare-2026-09-08`
+- approved model: `gpt-image-2.5-sunburst` (the heavier GPT Image 2.5
+  variant, better at reference-photo likeness; Flare is the fast one)
 - server-controlled resolution: exact 16:9, 1:1, 9:16, 1.91:1 or 4:5 sizes
   (1.91:1 and 4:5 added 2026-09-12 for Google and Meta paid placements)
 - default quality: `low`; `medium` and `high` are permitted upgrades

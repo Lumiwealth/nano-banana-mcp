@@ -15,9 +15,14 @@ would make the ledger and the creative unreproducible.
 
 Model note, 2026-09-12: OpenAI shipped GPT Image 2.5 on 2026-09-08 in two
 variants, Flare (fast, everyday) and Sunburst (heavier, built for editing
-precision). This key can only see Flare. Sunburst is likely worth using for
-reference-photo likeness work and needs to be enabled for the account or a
-key with access supplied; until then APPROVED_MODEL stays on Flare.
+precision and better reference-photo likeness). The API initially returned
+only Flare because the OpenAI project `proj_2SzHwHaAa7g1EHPsuO1bgHBL`
+(BotSpot Creative Development) had a model allowlist that excluded Sunburst.
+Rob authorized enabling it and it was added to that project's allowlist on
+2026-09-12. APPROVED_MODEL is now Sunburst, which is the right default for
+founder-likeness ad creative. Note the dated snapshot
+`gpt-image-2.5-sunburst-2026-09-08` was still 403 at the time of the change
+while the unversioned alias worked, so the alias is pinned here.
 
 Auto quality and per-call model or resolution selection are deliberately
 unavailable.
@@ -44,7 +49,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 from openai import OpenAI
 
-APPROVED_MODEL = "gpt-image-2.5-flare-2026-09-08"
+APPROVED_MODEL = "gpt-image-2.5-sunburst"
 DEFAULT_QUALITY = "low"
 ALLOWED_QUALITIES = ("low", "medium", "high", "xhigh", "max")
 SERVER_INSTRUCTIONS = (
