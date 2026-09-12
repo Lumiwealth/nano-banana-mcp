@@ -10,12 +10,18 @@ A provider-specific exception requires an explicit request from Rob.
 The current containment profile is intentionally strict:
 
 - approved model: `gpt-image-2.5-flare-2026-09-08`
-- server-controlled resolution: exact 16:9, 1:1, or 9:16 sizes
-- default quality: `low`; the only permitted upgrade is `medium`
+- server-controlled resolution: exact 16:9, 1:1, 9:16, 1.91:1 or 4:5 sizes
+  (1.91:1 and 4:5 added 2026-09-12 for Google and Meta paid placements)
+- default quality: `low`; `medium` and `high` are permitted upgrades
+  (Rob authorized `high` on 2026-09-12 for paid advertising: "they are ads,
+  we are spending way more than a dollar per image in spend anyway". Measured
+  output tokens: 196 low, 439 medium, 1756 high, so high is roughly 5 cents.
+  Use `high` for anything that will run as a paid ad or a presentation slide.)
 - calendar-month creative budget: $100
 - caller inputs: prompt, purpose, aspect ratio, and optional low/medium quality
-- prohibited caller inputs: model, resolution, target size, output format, high
-  quality, and auto quality
+- prohibited caller inputs: model, resolution, target size, output format, and
+  `auto` quality (`auto` is nondeterministic and silently downgrades, which
+  would make the ledger and the creative unreproducible)
 - the exact provider response is saved without cropping, overlays, or repair
 
 ## Tools

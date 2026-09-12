@@ -3,7 +3,12 @@
 
 The provider/model, resolution, and monthly budget are server settings. Callers
 may supply creative intent plus one tightly bounded quality choice: low is the
-default and medium is the only permitted upgrade. High/auto quality and
+default; medium and high are permitted upgrades. Rob authorized high on
+2026-09-12 for paid advertising: "they are ads, we are spending way more than
+a dollar per image in spend anyway, so it makes sense to use the best possible
+quality." Measured output tokens are 196 low, 439 medium, 1756 high, so high
+costs roughly five cents. `auto` stays banned because it is nondeterministic
+and silently downgrades. Auto quality and
 per-call model or resolution selection are deliberately unavailable.
 """
 
@@ -30,7 +35,7 @@ from openai import OpenAI
 
 APPROVED_MODEL = "gpt-image-2.5-flare-2026-09-08"
 DEFAULT_QUALITY = "low"
-ALLOWED_QUALITIES = ("low", "medium")
+ALLOWED_QUALITIES = ("low", "medium", "high")
 SERVER_INSTRUCTIONS = (
     "This server's canonical name is Image Generator. Treat user phrases such as "
     "'Nano Banana', 'nano-banana', or 'make an image' as image-generation intent, "
@@ -50,7 +55,7 @@ APPROVED_SIZES = {
 }
 # Deliberately conservative reservation ceilings. Successful calls replace
 # these with token-derived actual cost in the ledger.
-ESTIMATED_COST_USD_BY_QUALITY = {"low": 0.01, "medium": 0.05}
+ESTIMATED_COST_USD_BY_QUALITY = {"low": 0.01, "medium": 0.05, "high": 0.15}
 OPENAI_TEXT_INPUT_USD_PER_MILLION = 5.0
 OPENAI_IMAGE_INPUT_USD_PER_MILLION = 8.0
 OPENAI_IMAGE_OUTPUT_USD_PER_MILLION = 30.0

@@ -41,9 +41,10 @@ def test_cli_locks_model_resolution_and_defaults_to_low(tmp_path, monkeypatch, c
     assert payload["resolution"] == "1536x864"
 
 
-def test_cli_has_no_model_resolution_or_high_quality_override() -> None:
+def test_cli_has_no_model_or_resolution_override_and_no_auto_quality() -> None:
     actions = {action.dest for action in cli._parser()._actions}
     assert "model" not in actions
     assert "resolution" not in actions
     quality = next(action for action in cli._parser()._actions if action.dest == "quality")
-    assert tuple(quality.choices) == ("low", "medium")
+    assert tuple(quality.choices) == ("low", "medium", "high")
+    assert "auto" not in quality.choices

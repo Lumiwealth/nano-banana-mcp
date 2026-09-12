@@ -22,19 +22,19 @@ def test_schema_forbids_model_resolution_and_unbounded_quality_overrides() -> No
         "aspect_ratio",
         "quality",
     }
-    assert schema["properties"]["quality"]["enum"] == ["low", "medium"]
+    assert schema["properties"]["quality"]["enum"] == ["low", "medium", "high"]
     assert schema["properties"]["quality"]["default"] == "low"
     assert "model" not in schema["properties"]
     assert "resolution" not in schema["properties"]
     assert "gemini-3-pro-image-preview" not in str(schema)
-    assert "high" not in schema["properties"]["quality"]["enum"]
+    # high was authorized by Rob on 2026-09-12 for paid ads; auto stays banned
     assert "auto" not in schema["properties"]["quality"]["enum"]
 
 
 def test_only_approved_gpt_image_model_and_fixed_sizes_exist() -> None:
     assert server.APPROVED_MODEL == "gpt-image-2.5-flare-2026-09-08"
     assert server.DEFAULT_QUALITY == "low"
-    assert server.ALLOWED_QUALITIES == ("low", "medium")
+    assert server.ALLOWED_QUALITIES == ("low", "medium", "high")
     # This set is a deliberate allowlist, not a default. It exists so an agent
     # cannot invent a resolution escape hatch. 1.91:1 and 4:5 were added on
     # 2026-09-12 at Rob's explicit request, because Google Ads rejects 16:9 as
@@ -204,17 +204,21 @@ def test_actual_cost_uses_gpt_image_2_token_rates() -> None:
     assert server._actual_cost(Response()) == 0.005815
 
 
-def test_medium_is_recorded_but_high_is_rejected(tmp_path, monkeypatch) -> None:
+def test_medium_and_high_are_recorded_but_auto_is_rejected(tmp_path, monkeypatch) -> None:
+    """Rob authorized high on 2026-09-12 for paid advertising. `auto` stays
+    banned because it is nondeterministic and silently downgrades, which would
+    make the ledger and the creative unreproducible."""
     monkeypatch.setattr(server, "STATE_DIR", tmp_path)
     monkeypatch.setattr(server, "LEDGER_PATH", tmp_path / "usage.sqlite3")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-    reservation_id = server._reserve("slide", "16:9", "medium")
-    with server._connect() as conn:
-        quality, estimate = conn.execute(
-            "SELECT quality, estimated_cost_usd FROM usage WHERE id=?",
-            (reservation_id,),
-        ).fetchone()
-    assert quality == "medium"
-    assert estimate == 0.05
+    for quality, expected_estimate in (("medium", 0.05), ("high", 0.15)):
+        reservation_id = server._reserve("slide", "16:9", quality)
+        with server._connect() as conn:
+            recorded, estimate = conn.execute(
+                "SELECT quality, estimated_cost_usd FROM usage WHERE id=?",
+                (reservation_id,),
+            ).fetchone()
+        assert recorded == quality
+        assert estimate == expected_estimate
     with pytest.raises(ValueError, match="quality must be"):
-        server._reserve("slide", "16:9", "high")
+        server._reserve("slide", "16:9", "auto")
