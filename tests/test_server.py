@@ -52,6 +52,16 @@ def test_only_approved_gpt_image_model_and_fixed_sizes_exist() -> None:
     assert "not as permission to select Google or Gemini" in server.SERVER_INSTRUCTIONS
 
 
+def test_tool_descriptions_match_the_effective_model_and_quality_contract() -> None:
+    tools = {tool.name: tool for tool in asyncio.run(server.list_tools())}
+    for name in ("generate_image", "edit_image"):
+        description = tools[name].description
+        assert "GPT Image 2.5 Sunburst" in description
+        assert "Flare" not in description
+        assert "medium is the only allowed upgrade" not in description
+        assert "auto" in description.lower()
+
+
 def test_budget_rejects_request_over_limit(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(server, "STATE_DIR", tmp_path)
     monkeypatch.setattr(server, "LEDGER_PATH", tmp_path / "usage.sqlite3")

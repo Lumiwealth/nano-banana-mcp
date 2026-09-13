@@ -77,11 +77,12 @@ local credential source without copying a raw key into either MCP config:
 IMAGE_GENERATOR_CALLER=creative-image-generator ./run.sh
 ```
 
-## Model upgrade to GPT Image 2.5 Flare (done, 2026-09-11)
+## Model migration history
 
-This server now runs `gpt-image-2.5-flare`, OpenAI's September 8, 2026 model.
-Flare is the cheaper, faster member of the 2.5 family, billed at the same
-per-token rates as GPT Image 2 with roughly half the latency.
+The server moved through GPT Image 2.5 Flare on September 11, 2026, before
+switching to `gpt-image-2.5-sunburst` on September 12 after that model became
+available to the project. Flare remains useful history for interpreting old
+receipts; Sunburst is the effective server-controlled model.
 
 The project could not call it at first:
 

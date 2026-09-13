@@ -518,8 +518,8 @@ async def list_tools() -> list[Tool]:
             "enum": list(ALLOWED_QUALITIES),
             "default": DEFAULT_QUALITY,
             "description": (
-                "Optional output quality. Omit for low. Use medium only when the "
-                "user requests it or an inspected low-quality result is insufficient."
+                "Optional output quality. Omit for low. Higher qualities require the "
+                "user's applicable creative-quality authority; auto is unavailable."
             ),
         },
     }
@@ -528,9 +528,9 @@ async def list_tools() -> list[Tool]:
             name="generate_image",
             description=(
                 "Generate one image using the approved server-controlled provider, "
-                "GPT Image 2.5 Flare model, and exact resolution. Quality defaults to low; "
-                "medium is the only allowed upgrade. High/auto quality and model or "
-                "resolution overrides are unavailable. The raw result is saved "
+                "GPT Image 2.5 Sunburst model, and exact resolution. Quality defaults "
+                "to low; higher explicit qualities are bounded by server policy. Auto "
+                "quality and model or resolution overrides are unavailable. The raw result is saved "
                 "without edits."
             ),
             inputSchema={
@@ -544,8 +544,9 @@ async def list_tools() -> list[Tool]:
             name="edit_image",
             description=(
                 "Regenerate an image from references using the same approved, "
-                "server-controlled generator. Low is the default and medium is the "
-                "only allowed upgrade. The result is not hand-repaired."
+                "server-controlled GPT Image 2.5 Sunburst generator. Low is the default; "
+                "higher explicit qualities are bounded by server policy and auto is "
+                "unavailable. The result is not hand-repaired."
             ),
             inputSchema={
                 "type": "object",
