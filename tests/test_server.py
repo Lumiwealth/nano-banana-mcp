@@ -234,3 +234,21 @@ def test_medium_and_high_are_recorded_but_auto_is_rejected(tmp_path, monkeypatch
         assert estimate == expected_estimate
     with pytest.raises(ValueError, match="quality must be"):
         server._reserve("slide", "16:9", "auto")
+
+
+def test_quality_guidance_tells_agents_when_to_pay_for_max() -> None:
+    """Defaults alone do not change behaviour; the description is what agents read.
+
+    Before 2026-09-12 the quality field told agents higher settings "require the
+    user's applicable creative-quality authority", which read as a gate and kept
+    every paid ad on low. Rob granted that authority and asked for the opposite
+    default posture: low everywhere, max for ads. If this guidance is lost,
+    ad creative silently regresses to low again.
+    """
+    tools = {tool.name: tool for tool in asyncio.run(server.list_tools())}
+    for name in ("generate_image", "edit_image"):
+        description = tools[name].inputSchema["properties"]["quality"]["description"]
+        assert "max" in description
+        assert "paid ad" in description.lower()
+        assert "low" in description
+    assert "max for anything that will run as a paid ad" in server.SERVER_INSTRUCTIONS

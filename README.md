@@ -13,7 +13,9 @@ The current containment profile is intentionally strict:
   variant, better at reference-photo likeness; Flare is the fast one)
 - server-controlled resolution: exact 16:9, 1:1, 9:16, 1.91:1 or 4:5 sizes
   (1.91:1 and 4:5 added 2026-09-12 for Google and Meta paid placements)
-- default quality: `low`; `medium` and `high` are permitted upgrades
+- default quality: `low` (correct for drafts, exploration and internal work);
+  `medium`, `high`, `xhigh` and `max` are permitted upgrades. **Use `max` for a
+  paid ad or a customer-facing slide.**
   (Rob authorized `high` on 2026-09-12 for paid advertising: "they are ads,
   we are spending way more than a dollar per image in spend anyway". Measured
   output tokens: 196 low, 439 medium, 1756 high, so high is roughly 5 cents.
@@ -24,6 +26,23 @@ The current containment profile is intentionally strict:
   `auto` quality (`auto` is nondeterministic and silently downgrades, which
   would make the ledger and the creative unreproducible)
 - the exact provider response is saved without cropping, overlays, or repair
+
+## Measured cost per image (2026-09-12, real API)
+
+Identical on both 2.5 models. The only thing a higher quality costs is time.
+
+| quality | tokens | cost | Flare | Sunburst |
+|---|---|---|---|---|
+| low | 196 | $0.0059 | 5.5s | 10.4s |
+| medium | 439 | $0.0132 | 6.3s | 9.1s |
+| high | 1,756 | $0.0527 | 13.0s | 22.6s |
+| xhigh | 3,122 | $0.0937 | 19.5s | 34.5s |
+| max | 7,024 | $0.2107 | 36.3s | 71.2s |
+
+Sunburst is the default because it is the variant built for editing precision
+and reference-photo likeness, and it costs the same as Flare. It is roughly
+twice as slow, which Rob accepted explicitly: "it's fine if it's slower, if it
+produces better images I'm all for it."
 
 ## Tools
 

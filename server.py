@@ -56,7 +56,10 @@ SERVER_INSTRUCTIONS = (
     "This server's canonical name is Image Generator. Treat user phrases such as "
     "'Nano Banana', 'nano-banana', or 'make an image' as image-generation intent, "
     "not as permission to select Google or Gemini. Always use this server's locked "
-    "provider and model unless Rob explicitly requests a provider-specific exception."
+    "provider and model unless Rob explicitly requests a provider-specific exception. "
+    "Quality: low is the default and is correct for drafts and internal work. Use "
+    "max for anything that will run as a paid ad or be shown to a customer; Rob "
+    "authorized that on 2026-09-12 and it costs about $0.21 an image."
 )
 APPROVED_SIZES = {
     "16:9": "1536x864",
@@ -518,8 +521,14 @@ async def list_tools() -> list[Tool]:
             "enum": list(ALLOWED_QUALITIES),
             "default": DEFAULT_QUALITY,
             "description": (
-                "Optional output quality. Omit for low. Higher qualities require the "
-                "user's applicable creative-quality authority; auto is unavailable."
+                "Optional output quality. Omit for low, which is the right default "
+                "for drafts, exploration, internal diagrams and anything disposable. "
+                "Use max for a PAID AD or a customer-facing slide: measured cost is "
+                "$0.21 against $0.006 for low, which is negligible beside media spend "
+                "(a single ad click costs more), and low is specifically weak at the "
+                "two things those assets need, small on-screen text and close-up "
+                "faces. Price is identical across qualities on both 2.5 models, so "
+                "the only cost of going higher is time. auto is unavailable."
             ),
         },
     }
