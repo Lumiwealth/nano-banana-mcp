@@ -44,7 +44,7 @@ def test_only_approved_gpt_image_model_and_fixed_sizes_exist() -> None:
         "16:9": "1536x864",
         "1:1": "1024x1024",
         "9:16": "864x1536",
-        "1.91:1": "1536x804",
+        "1.91:1": "1536x800",
         "4:5": "1024x1280",
     }
     assert "canonical name is Image Generator" in server.SERVER_INSTRUCTIONS
@@ -252,3 +252,15 @@ def test_quality_guidance_tells_agents_when_to_pay_for_max() -> None:
         assert "paid ad" in description.lower()
         assert "low" in description
     assert "max for anything that will run as a paid ad" in server.SERVER_INSTRUCTIONS
+
+
+def test_every_approved_size_is_divisible_by_sixteen() -> None:
+    """The provider rejects any size whose width or height is not a multiple of
+    16 with `invalid_value`. 1.91:1 shipped as 1536x804 on 2026-09-12 and every
+    landscape generation failed until it was corrected to 1536x800. A ratio is
+    only useful if the size behind it is legal.
+    """
+    for ratio, size in server.APPROVED_SIZES.items():
+        width, height = (int(part) for part in size.split("x"))
+        assert width % 16 == 0, f"{ratio} width {width} is not divisible by 16"
+        assert height % 16 == 0, f"{ratio} height {height} is not divisible by 16"

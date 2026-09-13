@@ -69,7 +69,10 @@ APPROVED_SIZES = {
     # (ASPECT_RATIO_NOT_ALLOWED) and house rules forbid cropping a generated
     # image by hand, so the generator has to emit these natively.
     # 1.91:1 is the Google/Meta landscape slot, 4:5 the portrait slot.
-    "1.91:1": "1536x804",
+    # Both dimensions MUST be divisible by 16 or the provider rejects the call
+    # with invalid_value. 1536x800 is 1.92:1, inside Google's 1.91:1 tolerance;
+    # the exact 804 is not a legal size.
+    "1.91:1": "1536x800",
     "4:5": "1024x1280",
 }
 # Deliberately conservative reservation ceilings. Successful calls replace
