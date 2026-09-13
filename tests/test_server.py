@@ -46,6 +46,8 @@ def test_only_approved_gpt_image_model_and_fixed_sizes_exist() -> None:
         "9:16": "864x1536",
         "1.91:1": "1536x800",
         "4:5": "1024x1280",
+        "2:3": "1024x1536",
+        "3:2": "1536x1024",
     }
     assert "canonical name is Image Generator" in server.SERVER_INSTRUCTIONS
     assert "Nano Banana" in server.SERVER_INSTRUCTIONS
@@ -252,6 +254,28 @@ def test_quality_guidance_tells_agents_when_to_pay_for_max() -> None:
         assert "paid ad" in description.lower()
         assert "low" in description
     assert "max for anything that will run as a paid ad" in server.SERVER_INSTRUCTIONS
+
+
+def test_paid_advertising_is_a_first_class_purpose() -> None:
+    """Rob authorized the max quality tier specifically for paid ads. If "ad" is
+    not a purpose, that spend files under "website" and usage_report cannot
+    answer "what did we spend on advertising creative this month".
+    """
+    assert "ad" in server.PURPOSES
+    tools = {tool.name: tool for tool in asyncio.run(server.list_tools())}
+    for name in ("generate_image", "edit_image"):
+        assert "ad" in tools[name].inputSchema["properties"]["purpose"]["enum"]
+
+
+def test_ratios_the_provider_cannot_do_are_recorded_not_silently_missing() -> None:
+    """4:1 was probed on 2026-09-13 and the provider refused it: the maximum
+    supported aspect ratio is 3:1. Recording that stops a future agent from
+    re-adding it, shipping it untested, and having every 4:1 call fail the way
+    1536x804 silently failed for a day.
+    """
+    assert "4:1" in server.UNSUPPORTED_RATIOS
+    assert "3:1" in server.UNSUPPORTED_RATIOS["4:1"]
+    assert not set(server.UNSUPPORTED_RATIOS) & set(server.APPROVED_SIZES)
 
 
 def test_every_approved_size_is_divisible_by_sixteen() -> None:

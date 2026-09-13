@@ -74,7 +74,16 @@ APPROVED_SIZES = {
     # the exact 804 is not a legal size.
     "1.91:1": "1536x800",
     "4:5": "1024x1280",
+    # Added 2026-09-13 after tests/provider_matrix_check.py proved the provider
+    # accepts them on both models. 2:3 is Pinterest and the taller portrait ad
+    # slots; 3:2 is the standard landscape photo crop.
+    "2:3": "1024x1536",
+    "3:2": "1536x1024",
 }
+# Proven impossible, do not add: the provider caps aspect ratio at 3:1, so
+# Google's 4:1 landscape logo slot cannot be generated natively. We do not
+# generate logos anyway (house rule: never invent a logo mark).
+UNSUPPORTED_RATIOS = {"4:1": "provider maximum aspect ratio is 3:1"}
 # Deliberately conservative reservation ceilings. Successful calls replace
 # these with token-derived actual cost in the ledger.
 ESTIMATED_COST_USD_BY_QUALITY = {
@@ -90,7 +99,11 @@ OPENAI_IMAGE_OUTPUT_USD_PER_MILLION = 30.0
 COMPANY_CREATIVE_HARD_CEILING_USD = 300.0
 ALERT_INTERVAL_USD = 100
 DEFAULT_MAX_REQUESTS_PER_MINUTE = 10
-PURPOSES = ("thumbnail", "slide", "email", "sms", "website", "test")
+# "ad" exists so paid media is a first-class purpose in the ledger. Before
+# 2026-09-13 an agent generating a Google Ads image had to file it under
+# "website", which made spend on paid creative invisible in usage_report even
+# though paid creative is the reason the max quality tier was authorized.
+PURPOSES = ("ad", "thumbnail", "slide", "email", "sms", "website", "test")
 ASPECT_RATIOS = tuple(APPROVED_SIZES)
 
 OUTPUT_DIR = Path(
