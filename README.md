@@ -13,15 +13,15 @@ The current containment profile is intentionally strict:
   variant, better at reference-photo likeness; Flare is the fast one)
 - server-controlled resolution: exact 16:9, 1:1, 9:16, 1.91:1 or 4:5 sizes
   (1.91:1 and 4:5 added 2026-09-12 for Google and Meta paid placements)
-- default quality: `low` (correct for drafts, exploration and internal work);
-  `medium`, `high`, `xhigh` and `max` are permitted upgrades. **Use `max` for a
-  paid ad or a customer-facing slide.**
-  (Rob authorized `high` on 2026-09-12 for paid advertising: "they are ads,
-  we are spending way more than a dollar per image in spend anyway". Measured
-  output tokens: 196 low, 439 medium, 1756 high, so high is roughly 5 cents.
-  Use `high` for anything that will run as a paid ad or a presentation slide.)
+- default quality: **`max`, for every image** (paid ads, emails, text
+  messages, slides, thumbnails). Rob, 2026-09-23: "A text message is three
+  cents... we should definitely spend the maximum amount of money that we can
+  spend on the images that we create. If it's five cents, 10 cents, who cares?"
+  `low`, `medium`, `high` and `xhigh` remain available only for throwaway
+  drafts where speed matters. Max costs about $0.21 and takes about 70 seconds
+  on Sunburst.
 - calendar-month creative budget: $100
-- caller inputs: prompt, purpose, aspect ratio, and optional low/medium quality
+- caller inputs: prompt, purpose, aspect ratio, and an optional quality tier
 - prohibited caller inputs: model, resolution, target size, output format, and
   `auto` quality (`auto` is nondeterministic and silently downgrades, which
   would make the ledger and the creative unreproducible)
@@ -77,9 +77,12 @@ request after accepting it.
 | `IMAGE_GENERATOR_MONTHLY_BUDGET_USD` | `100` |
 
 There is deliberately no environment or tool parameter that changes the model
-or resolution. `low` is used when quality is omitted. `medium` may be selected
-for a final asset when Rob asks for it or an inspected low-quality result is
-insufficient; `high` and `auto` are unavailable.
+or resolution. `max` is used when quality is omitted. `auto` is unavailable.
+
+Images of Rob: never generate him without references. Pass three reference
+photos from one session from `MarketingManager/rob-photos/` (black-shirt set
+preferred) and follow `MarketingManager/docs/botspot_ads/AD_IMAGE_RULES.md`.
+The server instructions say the same thing so every agent sees it.
 
 ## Run and test
 

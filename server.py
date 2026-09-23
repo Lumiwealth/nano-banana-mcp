@@ -2,13 +2,17 @@
 """Provider-neutral, cost-controlled MCP image generator.
 
 The provider/model, resolution, and monthly budget are server settings. Callers
-may supply creative intent plus one tightly bounded quality choice: low is the
-default; medium, high, xhigh and max are permitted upgrades. Rob authorized
-the full ceiling on 2026-09-12 for paid advertising: "it should be the best
-model with the highest setting... spend a dollar an image, I do not care."
+may supply creative intent plus one tightly bounded quality choice: max is the
+default; low, medium, high and xhigh remain available for throwaway drafts.
+Rob authorized the full ceiling on 2026-09-12 for paid advertising ("it should
+be the best model with the highest setting... spend a dollar an image, I do not
+care") and on 2026-09-23 made max the default for every image, including email
+and text-message creative: "A text message is three cents... we should
+definitely spend the maximum amount of money that we can spend on the images
+that we create. If it's five cents, 10 cents, who cares?"
 Measured output tokens on gpt-image-2.5-flare: 196 low, 439 medium, 1756
 high, 3122 xhigh, 7024 max, so max is about 21 cents at $30 per million
-output tokens. Use max for anything that will run as a paid ad.
+output tokens.
 
 `auto` stays banned: it is nondeterministic and silently downgrades, which
 would make the ledger and the creative unreproducible.
@@ -50,16 +54,21 @@ from mcp.types import TextContent, Tool
 from openai import OpenAI
 
 APPROVED_MODEL = "gpt-image-2.5-sunburst"
-DEFAULT_QUALITY = "low"
+DEFAULT_QUALITY = "max"
 ALLOWED_QUALITIES = ("low", "medium", "high", "xhigh", "max")
 SERVER_INSTRUCTIONS = (
     "This server's canonical name is Image Generator. Treat user phrases such as "
     "'Nano Banana', 'nano-banana', or 'make an image' as image-generation intent, "
     "not as permission to select Google or Gemini. Always use this server's locked "
     "provider and model unless Rob explicitly requests a provider-specific exception. "
-    "Quality: low is the default and is correct for drafts and internal work. Use "
-    "max for anything that will run as a paid ad or be shown to a customer; Rob "
-    "authorized that on 2026-09-12 and it costs about $0.21 an image."
+    "Quality: max is the default for every image, including email and text-message "
+    "creative; Rob set that on 2026-09-23 and it costs about $0.21 an image. Only "
+    "choose a lower tier for a throwaway draft where speed matters. "
+    "Images of Rob Grzesik: never generate him without references. Pass three "
+    "reference photos from the same session from "
+    "/Users/robertgrzesik/Development/MarketingManager/rob-photos (read its README; "
+    "the black-shirt set is preferred) and follow "
+    "/Users/robertgrzesik/Development/MarketingManager/docs/botspot_ads/AD_IMAGE_RULES.md."
 )
 APPROVED_SIZES = {
     "16:9": "1536x864",
@@ -537,14 +546,14 @@ async def list_tools() -> list[Tool]:
             "enum": list(ALLOWED_QUALITIES),
             "default": DEFAULT_QUALITY,
             "description": (
-                "Optional output quality. Omit for low, which is the right default "
-                "for drafts, exploration, internal diagrams and anything disposable. "
-                "Use max for a PAID AD or a customer-facing slide: measured cost is "
-                "$0.21 against $0.006 for low, which is negligible beside media spend "
-                "(a single ad click costs more), and low is specifically weak at the "
-                "two things those assets need, small on-screen text and close-up "
-                "faces. Price is identical across qualities on both 2.5 models, so "
-                "the only cost of going higher is time. auto is unavailable."
+                "Optional output quality. Omit for max, the default for every image: "
+                "paid ads, emails, text messages, slides and thumbnails. Measured "
+                "cost is about $0.21 against $0.006 for low, which is negligible "
+                "beside what one send or one ad click costs, and low is specifically "
+                "weak at small on-screen text and close-up faces. Choose a lower tier "
+                "only for a throwaway draft where speed matters. Price is identical "
+                "across qualities on both 2.5 models, so the only cost of max is "
+                "time. auto is unavailable."
             ),
         },
     }
@@ -554,7 +563,7 @@ async def list_tools() -> list[Tool]:
             description=(
                 "Generate one image using the approved server-controlled provider, "
                 "GPT Image 2.5 Sunburst model, and exact resolution. Quality defaults "
-                "to low; higher explicit qualities are bounded by server policy. Auto "
+                "to max; lower tiers are for throwaway drafts only. Auto "
                 "quality and model or resolution overrides are unavailable. The raw result is saved "
                 "without edits."
             ),
@@ -569,8 +578,8 @@ async def list_tools() -> list[Tool]:
             name="edit_image",
             description=(
                 "Regenerate an image from references using the same approved, "
-                "server-controlled GPT Image 2.5 Sunburst generator. Low is the default; "
-                "higher explicit qualities are bounded by server policy and auto is "
+                "server-controlled GPT Image 2.5 Sunburst generator. Max is the default; "
+                "lower tiers are for throwaway drafts only and auto is "
                 "unavailable. The result is not hand-repaired."
             ),
             inputSchema={

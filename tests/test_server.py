@@ -23,7 +23,7 @@ def test_schema_forbids_model_resolution_and_unbounded_quality_overrides() -> No
         "quality",
     }
     assert schema["properties"]["quality"]["enum"] == ["low", "medium", "high", "xhigh", "max"]
-    assert schema["properties"]["quality"]["default"] == "low"
+    assert schema["properties"]["quality"]["default"] == "max"
     assert "model" not in schema["properties"]
     assert "resolution" not in schema["properties"]
     assert "gemini-3-pro-image-preview" not in str(schema)
@@ -33,7 +33,7 @@ def test_schema_forbids_model_resolution_and_unbounded_quality_overrides() -> No
 
 def test_only_approved_gpt_image_model_and_fixed_sizes_exist() -> None:
     assert server.APPROVED_MODEL == "gpt-image-2.5-sunburst"
-    assert server.DEFAULT_QUALITY == "low"
+    assert server.DEFAULT_QUALITY == "max"
     assert server.ALLOWED_QUALITIES == ("low", "medium", "high", "xhigh", "max")
     # This set is a deliberate allowlist, not a default. It exists so an agent
     # cannot invent a resolution escape hatch. 1.91:1 and 4:5 were added on
@@ -68,7 +68,9 @@ def test_budget_rejects_request_over_limit(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(server, "STATE_DIR", tmp_path)
     monkeypatch.setattr(server, "LEDGER_PATH", tmp_path / "usage.sqlite3")
     monkeypatch.setattr(
-        server, "ESTIMATED_COST_USD_BY_QUALITY", {"low": 100.01, "medium": 100.01}
+        server,
+        "ESTIMATED_COST_USD_BY_QUALITY",
+        {"low": 100.01, "medium": 100.01, "max": 100.01},
     )
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     with pytest.raises(RuntimeError, match="budget exhausted"):
@@ -93,7 +95,7 @@ def test_ledger_attributes_without_prompt_or_raw_key(tmp_path, monkeypatch) -> N
     assert row[2] != "raw-secret-value"
     assert row[3] == "openai"
     assert row[4] == server.APPROVED_MODEL
-    assert row[5] == "low"
+    assert row[5] == "max"
     assert row[6] == "1536x864"
     assert row[7] == 0
     assert row[8] == 0.0058
@@ -131,7 +133,9 @@ def test_each_hundred_dollar_alert_is_recorded_once(tmp_path, monkeypatch) -> No
     monkeypatch.setattr(server, "STATE_DIR", tmp_path)
     monkeypatch.setattr(server, "LEDGER_PATH", tmp_path / "usage.sqlite3")
     monkeypatch.setattr(
-        server, "ESTIMATED_COST_USD_BY_QUALITY", {"low": 100.0, "medium": 100.0}
+        server,
+        "ESTIMATED_COST_USD_BY_QUALITY",
+        {"low": 100.0, "medium": 100.0, "max": 100.0},
     )
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     first = server._reserve("slide", "16:9")
@@ -238,22 +242,39 @@ def test_medium_and_high_are_recorded_but_auto_is_rejected(tmp_path, monkeypatch
         server._reserve("slide", "16:9", "auto")
 
 
-def test_quality_guidance_tells_agents_when_to_pay_for_max() -> None:
+def test_max_is_the_default_quality_for_everything() -> None:
     """Defaults alone do not change behaviour; the description is what agents read.
 
-    Before 2026-09-12 the quality field told agents higher settings "require the
-    user's applicable creative-quality authority", which read as a gate and kept
-    every paid ad on low. Rob granted that authority and asked for the opposite
-    default posture: low everywhere, max for ads. If this guidance is lost,
-    ad creative silently regresses to low again.
+    Rob, 2026-09-23: Sunburst on the maximum setting should be the default for
+    every image, including emails and texts. "A text message is three cents...
+    we should definitely spend the maximum amount of money that we can spend on
+    the images that we create. If it's five cents, 10 cents, who cares?"
+    Before this, low was the default and max was reserved for paid ads, so any
+    agent that omitted quality shipped a weaker image to real customers. If
+    this guidance regresses, customer-facing creative silently drops back to low.
     """
     tools = {tool.name: tool for tool in asyncio.run(server.list_tools())}
     for name in ("generate_image", "edit_image"):
-        description = tools[name].inputSchema["properties"]["quality"]["description"]
-        assert "max" in description
-        assert "paid ad" in description.lower()
-        assert "low" in description
-    assert "max for anything that will run as a paid ad" in server.SERVER_INSTRUCTIONS
+        quality = tools[name].inputSchema["properties"]["quality"]
+        assert quality["default"] == "max"
+        assert "Omit for max" in quality["description"]
+        assert "Omit for low" not in quality["description"]
+        assert "defaults to max" in tools[name].description.lower() or (
+            "max is the default" in tools[name].description.lower()
+        )
+    assert "max is the default" in server.SERVER_INSTRUCTIONS.lower()
+    assert "low is the default" not in server.SERVER_INSTRUCTIONS.lower()
+
+
+def test_instructions_point_every_agent_at_robs_reference_photos() -> None:
+    """Rob, 2026-09-23: images of him must be built from the real photos in
+    MarketingManager so it actually looks like him. The instruction lives on
+    the server because every agent that generates an image reads it."""
+    assert (
+        "/Users/robertgrzesik/Development/MarketingManager/rob-photos"
+        in server.SERVER_INSTRUCTIONS
+    )
+    assert "three reference photos" in server.SERVER_INSTRUCTIONS.lower()
 
 
 def test_paid_advertising_is_a_first_class_purpose() -> None:

@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import cli
 
 
-def test_cli_locks_model_resolution_and_defaults_to_low(tmp_path, monkeypatch, capsys) -> None:
+def test_cli_locks_model_resolution_and_defaults_to_max(tmp_path, monkeypatch, capsys) -> None:
     output = tmp_path / "result.png"
     output.write_bytes(b"image")
     captured: dict[str, object] = {}
@@ -34,7 +34,8 @@ def test_cli_locks_model_resolution_and_defaults_to_low(tmp_path, monkeypatch, c
         "prompt": "A thumbnail",
         "purpose": "thumbnail",
         "aspect_ratio": "16:9",
-        "quality": "low",
+        # Rob, 2026-09-23: Sunburst on max is the default for every image.
+        "quality": "max",
         "references": [],
     }
     assert payload["model"] == "gpt-image-2.5-sunburst"
