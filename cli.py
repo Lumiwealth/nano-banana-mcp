@@ -20,6 +20,7 @@ def _parser() -> argparse.ArgumentParser:
         default=server.DEFAULT_QUALITY,
     )
     parser.add_argument("--reference", action="append", default=[])
+    parser.add_argument("--max-sdk-retries", type=int, choices=(0, 1, 2), default=2)
     return parser
 
 
@@ -31,6 +32,7 @@ def main(argv: list[str] | None = None) -> int:
         aspect_ratio=args.aspect_ratio,
         quality=args.quality,
         references=args.reference,
+        max_sdk_retries=args.max_sdk_retries,
     )
     print(
         json.dumps(

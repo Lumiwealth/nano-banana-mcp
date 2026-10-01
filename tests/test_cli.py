@@ -37,9 +37,22 @@ def test_cli_locks_model_resolution_and_defaults_to_max(tmp_path, monkeypatch, c
         # Rob, 2026-09-23: Sunburst on max is the default for every image.
         "quality": "max",
         "references": [],
+        "max_sdk_retries": 2,
     }
     assert payload["model"] == "gpt-image-2.5-sunburst"
     assert payload["resolution"] == "1536x864"
+
+
+def test_media_cli_can_request_one_recorded_provider_attempt(tmp_path, monkeypatch, capsys):
+    captured = []
+    monkeypatch.setattr(cli.server, "_generate", lambda **kwargs: (
+        captured.append(kwargs) or [tmp_path / "whole-image.png"]
+    ))
+    assert cli.main([
+        "--prompt", "A thumbnail", "--purpose", "thumbnail", "--aspect-ratio", "16:9",
+        "--quality", "low", "--max-sdk-retries", "0",
+    ]) == 0
+    assert captured[0]["max_sdk_retries"] == 0
 
 
 def test_cli_has_no_model_or_resolution_override_and_no_auto_quality() -> None:

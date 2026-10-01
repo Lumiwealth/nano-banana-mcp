@@ -27,6 +27,17 @@ The current containment profile is intentionally strict:
   would make the ledger and the creative unreproducible)
 - the exact provider response is saved without cropping, overlays, or repair
 
+## Single-attempt pipeline receipts
+
+The CLI accepts `--max-sdk-retries 0` for Media Studio's recorded provider
+attempts. Other callers retain the SDK's existing two-retry default; the CLI
+cannot raise that bound. The ledger saves the retry setting and returned text
+input, image input, and image output token counts without prompts or keys.
+A successful zero-retry call with returned usage can settle its measured cost
+estimate. Missing usage, failures, and legacy rows remain uncertain. Migration
+preserves old costs and marks legacy rows with the original retry setting.
+This does not change the model, quality, creative budget, or MCP tool schema.
+
 ## Measured cost per image (2026-09-12, real API)
 
 Identical on both 2.5 models. The only thing a higher quality costs is time.

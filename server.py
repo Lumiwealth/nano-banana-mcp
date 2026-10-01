@@ -194,6 +194,8 @@ def _connect() -> sqlite3.Connection:
             resolution TEXT NOT NULL,
             aspect_ratio TEXT NOT NULL,
             retries INTEGER NOT NULL,
+            max_sdk_retries INTEGER NOT NULL DEFAULT 2,
+            provider_usage_json TEXT,
             estimated_cost_usd REAL NOT NULL,
             actual_cost_usd REAL,
             elapsed_ms INTEGER,
@@ -203,6 +205,10 @@ def _connect() -> sqlite3.Connection:
         """
     )
     columns = {row[1] for row in conn.execute("PRAGMA table_info(usage)")}
+    if "max_sdk_retries" not in columns:
+        conn.execute("ALTER TABLE usage ADD COLUMN max_sdk_retries INTEGER NOT NULL DEFAULT 2")
+    if "provider_usage_json" not in columns:
+        conn.execute("ALTER TABLE usage ADD COLUMN provider_usage_json TEXT")
     if "quality" not in columns:
         conn.execute(
             "ALTER TABLE usage ADD COLUMN quality TEXT NOT NULL DEFAULT 'legacy'"
@@ -296,7 +302,11 @@ def _record_due_alerts(
             )
 
 
-def _reserve(purpose: str, aspect_ratio: str, quality: str = DEFAULT_QUALITY) -> int:
+def _reserve(
+    purpose: str, aspect_ratio: str, quality: str = DEFAULT_QUALITY, *, max_sdk_retries: int = 2
+) -> int:
+    if type(max_sdk_retries) is not int or not 0 <= max_sdk_retries <= 2:
+        raise ValueError("max_sdk_retries must be between 0 and 2")
     if purpose not in PURPOSES:
         raise ValueError(f"purpose must be one of {PURPOSES}")
     if aspect_ratio not in ASPECT_RATIOS:
@@ -341,8 +351,8 @@ def _reserve(purpose: str, aspect_ratio: str, quality: str = DEFAULT_QUALITY) ->
             INSERT INTO usage (
                 created_at, month, purpose, caller, key_id, provider, model,
                 quality, resolution, aspect_ratio, retries, estimated_cost_usd,
-                status
-            ) VALUES (?, ?, ?, ?, ?, 'openai', ?, ?, ?, ?, 0, ?, 'reserved')
+                status, max_sdk_retries
+            ) VALUES (?, ?, ?, ?, ?, 'openai', ?, ?, ?, ?, 0, ?, 'reserved', ?)
             """,
             (
                 datetime.now(UTC).isoformat(),
@@ -355,6 +365,7 @@ def _reserve(purpose: str, aspect_ratio: str, quality: str = DEFAULT_QUALITY) ->
                 APPROVED_SIZES[aspect_ratio],
                 aspect_ratio,
                 estimated_cost,
+                max_sdk_retries,
             ),
         )
         return int(cursor.lastrowid)
@@ -366,8 +377,13 @@ def _finish(
     elapsed_ms: int,
     actual_cost_usd: float | None,
     error: Exception | None,
+    provider_usage: dict[str, int] | None = None,
 ) -> None:
     with _connect() as conn:
+        conn.execute(
+            "UPDATE usage SET provider_usage_json=? WHERE id=?",
+            (json.dumps(provider_usage) if provider_usage else None, reservation_id),
+        )
         if error is None:
             conn.execute(
                 "UPDATE usage SET status='succeeded', actual_cost_usd=?, "
@@ -445,7 +461,7 @@ def _read_reference(path_str: str) -> Path:
     return path
 
 
-def _actual_cost(response: object) -> float | None:
+def _provider_usage(response: object) -> dict[str, int] | None:
     metadata = response.model_dump(exclude={"data"})
     usage = metadata.get("usage") or {}
     input_details = usage.get("input_tokens_details") or {}
@@ -457,11 +473,22 @@ def _actual_cost(response: object) -> float | None:
     )
     if not any((text_input, image_input, image_output)):
         return None
+    return {
+        "text_input_tokens": text_input,
+        "image_input_tokens": image_input,
+        "image_output_tokens": image_output,
+    }
+
+
+def _actual_cost(response: object) -> float | None:
+    usage = _provider_usage(response)
+    if usage is None:
+        return None
     return round(
         (
-            text_input * OPENAI_TEXT_INPUT_USD_PER_MILLION
-            + image_input * OPENAI_IMAGE_INPUT_USD_PER_MILLION
-            + image_output * OPENAI_IMAGE_OUTPUT_USD_PER_MILLION
+            usage["text_input_tokens"] * OPENAI_TEXT_INPUT_USD_PER_MILLION
+            + usage["image_input_tokens"] * OPENAI_IMAGE_INPUT_USD_PER_MILLION
+            + usage["image_output_tokens"] * OPENAI_IMAGE_OUTPUT_USD_PER_MILLION
         )
         / 1_000_000,
         6,
@@ -475,13 +502,15 @@ def _generate(
     aspect_ratio: str,
     quality: str,
     references: list[str],
+    max_sdk_retries: int = 2,
 ) -> list[Path]:
-    reservation_id = _reserve(purpose, aspect_ratio, quality)
+    reservation_id = _reserve(purpose, aspect_ratio, quality, max_sdk_retries=max_sdk_retries)
     started = time.monotonic()
     error: Exception | None = None
     actual_cost_usd: float | None = None
+    provider_usage: dict[str, int] | None = None
     try:
-        client = OpenAI(api_key=_api_key())
+        client = OpenAI(api_key=_api_key(), max_retries=max_sdk_retries)
         common = {
             "model": APPROVED_MODEL,
             "prompt": prompt,
@@ -496,6 +525,7 @@ def _generate(
                 response = client.images.edit(image=files, **common)
         else:
             response = client.images.generate(**common)
+        provider_usage = _provider_usage(response)
         actual_cost_usd = _actual_cost(response)
         images = [
             base64.b64decode(item.b64_json)
@@ -521,6 +551,7 @@ def _generate(
             elapsed_ms=int((time.monotonic() - started) * 1000),
             actual_cost_usd=actual_cost_usd,
             error=error,
+            provider_usage=provider_usage,
         )
 
 
@@ -564,7 +595,8 @@ async def list_tools() -> list[Tool]:
                 "Generate one image using the approved server-controlled provider, "
                 "GPT Image 2.5 Sunburst model, and exact resolution. Quality defaults "
                 "to max; lower tiers are for throwaway drafts only. Auto "
-                "quality and model or resolution overrides are unavailable. The raw result is saved "
+                "quality and model or resolution overrides are unavailable. "
+                "The raw result is saved "
                 "without edits."
             ),
             inputSchema={

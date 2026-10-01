@@ -12,6 +12,107 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import server
 
 
+def test_one_attempt_generation_records_usage_and_disables_hidden_sdk_retries(
+    tmp_path, monkeypatch
+):
+    import base64
+    import json
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(server, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(server, "LEDGER_PATH", tmp_path / "usage.sqlite3")
+    monkeypatch.setattr(server, "OUTPUT_DIR", tmp_path / "images")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    seen = []
+    usage = {
+        "input_tokens_details": {"text_tokens": 215, "image_tokens": 140},
+        "output_tokens_details": {"image_tokens": 158},
+    }
+    response = SimpleNamespace(
+        data=[SimpleNamespace(b64_json=base64.b64encode(b"approved image").decode())],
+        model_dump=lambda **_: {"usage": usage},
+    )
+    monkeypatch.setattr(server, "OpenAI", lambda **kwargs: (
+        seen.append(kwargs)
+        or SimpleNamespace(images=SimpleNamespace(generate=lambda **_: response))
+    ))
+    paths = server._generate(
+        prompt="A useful framework", purpose="thumbnail", aspect_ratio="16:9",
+        quality="low", references=[], max_sdk_retries=0,
+    )
+    assert seen == [{"api_key": "test-key", "max_retries": 0}]
+    assert paths[0].read_bytes() == b"approved image"
+    with server._connect() as conn:
+        row = conn.execute(
+            "SELECT max_sdk_retries,provider_usage_json,actual_cost_usd,status FROM usage"
+        ).fetchone()
+    assert row[0] == 0 and row[3] == "succeeded"
+    assert json.loads(row[1]) == {
+        "text_input_tokens": 215, "image_input_tokens": 140, "image_output_tokens": 158,
+    }
+    assert row[2] == 0.006935
+
+
+@pytest.mark.parametrize("attempts", [-1, 3])
+def test_sdk_retry_override_cannot_raise_the_existing_bound(tmp_path, monkeypatch, attempts):
+    monkeypatch.setattr(server, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(server, "LEDGER_PATH", tmp_path / "usage.sqlite3")
+    monkeypatch.setattr(server, "OpenAI", lambda **_: pytest.fail("provider called"))
+    with pytest.raises(ValueError, match="max_sdk_retries"):
+        server._generate(
+            prompt="test", purpose="thumbnail", aspect_ratio="16:9",
+            quality="low", references=[], max_sdk_retries=attempts,
+        )
+    assert not server.LEDGER_PATH.exists()
+
+
+def test_legacy_ledger_migration_preserves_unknown_retry_cost(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(server, "LEDGER_PATH", tmp_path / "usage.sqlite3")
+    # A real pre-change schema, including a successful historical call whose
+    # earlier SDK attempts were never recorded. Migration cannot certify it.
+    with sqlite3.connect(server.LEDGER_PATH) as conn:
+        conn.execute("""CREATE TABLE usage (
+            id INTEGER PRIMARY KEY, created_at TEXT NOT NULL, month TEXT NOT NULL,
+            purpose TEXT NOT NULL, caller TEXT NOT NULL, key_id TEXT NOT NULL,
+            provider TEXT NOT NULL, model TEXT NOT NULL, quality TEXT NOT NULL,
+            resolution TEXT NOT NULL, aspect_ratio TEXT NOT NULL, retries INTEGER NOT NULL,
+            estimated_cost_usd REAL NOT NULL, actual_cost_usd REAL, elapsed_ms INTEGER,
+            status TEXT NOT NULL, error_type TEXT)""")
+        conn.execute("""INSERT INTO usage VALUES (
+            1,'2026-09-30','2026-09','thumbnail','legacy','key','openai','model','low',
+            '1536x864','16:9',0,0.50,0.03,100,'succeeded',NULL)""")
+    with server._connect() as conn:
+        row = conn.execute(
+            "SELECT max_sdk_retries,provider_usage_json,actual_cost_usd FROM usage"
+        ).fetchone()
+    assert row == (2, None, 0.03)
+
+
+def test_single_attempt_without_returned_usage_stays_unknown(tmp_path, monkeypatch):
+    import base64
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(server, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(server, "LEDGER_PATH", tmp_path / "usage.sqlite3")
+    monkeypatch.setattr(server, "OUTPUT_DIR", tmp_path / "images")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    response = SimpleNamespace(
+        data=[SimpleNamespace(b64_json=base64.b64encode(b"approved image").decode())],
+        model_dump=lambda **_: {},
+    )
+    monkeypatch.setattr(server, "OpenAI", lambda **_: SimpleNamespace(
+        images=SimpleNamespace(generate=lambda **_: response)
+    ))
+    server._generate(prompt="test", purpose="thumbnail", aspect_ratio="16:9",
+                     quality="low", references=[], max_sdk_retries=0)
+    with server._connect() as conn:
+        row = conn.execute(
+            "SELECT status,max_sdk_retries,provider_usage_json,actual_cost_usd FROM usage"
+        ).fetchone()
+    assert row == ("succeeded", 0, None, None)
+
+
 def test_schema_forbids_model_resolution_and_unbounded_quality_overrides() -> None:
     tools = {tool.name: tool for tool in asyncio.run(server.list_tools())}
     schema = tools["generate_image"].inputSchema
