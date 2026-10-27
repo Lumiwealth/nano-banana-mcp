@@ -59,7 +59,8 @@ produces better images I'm all for it."
 
 - `generate_image`: raw image generation
 - `edit_image`: regeneration using one or more references
-- `usage_report`: current-month usage grouped by purpose
+- `usage_report`: usage grouped by purpose/task; optional `start_time` (inclusive),
+  `end_time` (exclusive) UTC timestamps and `include_requests` for individual assets
 
 Every generation requires one purpose:
 `thumbnail`, `slide`, `email`, `sms`, `website`, or `test`.
@@ -69,8 +70,22 @@ Every generation requires one purpose:
 The SQLite ledger defaults to
 `~/.local/state/image-generator/usage.sqlite3`. It records timestamp, purpose,
 caller, a one-way API-key fingerprint, provider, model, quality, resolution,
-retry count, estimated/actual cost, elapsed time, and status. It never stores
-the raw key or the prompt.
+retry setting, provider-returned token usage, token-derived cost, elapsed time,
+and status. Each request also records task/session ID (when supplied by the host),
+source directory, optional task/asset labels, provider request ID, output paths
+and file hashes, and a prompt hash. It never stores the raw key or prompt.
+
+Use `task_label` and `asset_label` on generation/edit tools (CLI: `--task-label`
+and `--asset-label`) to name the actual project and asset. Requests without a
+label remain visibly unattributed; they are never guessed into a campaign.
+`usage_report(include_requests=true)` returns this per-asset evidence.
+
+`actual_cost_usd` is the historical field name for a token-derived estimate,
+not an invoice. Provider usage missing on a failed request stays unknown.
+Legacy failed-request reservations are excluded from spend reports without
+rewriting the stored historical rows. Reservations are reported separately and
+still apply conservatively to the budget. Reconcile estimates to provider billing
+for the same time window; do not allocate an unexplained difference to assets.
 
 The default monthly ceiling is $100. Rob can manually unlock only in $100
 increments by changing `IMAGE_GENERATOR_MONTHLY_BUDGET_USD`. Failed provider

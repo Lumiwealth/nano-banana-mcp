@@ -62,3 +62,13 @@ def test_cli_has_no_model_or_resolution_override_and_no_auto_quality() -> None:
     quality = next(action for action in cli._parser()._actions if action.dest == "quality")
     assert tuple(quality.choices) == ("low", "medium", "high", "xhigh", "max")
     assert "auto" not in quality.choices
+
+
+def test_cli_forwards_cost_attribution(tmp_path, monkeypatch, capsys):
+    seen = []
+    monkeypatch.setattr(cli.server, "_generate", lambda **kwargs: seen.append(kwargs) or [])
+    assert cli.main(["--prompt", "Synthetic asset", "--purpose", "slide",
+                     "--aspect-ratio", "16:9", "--task-label", "Synthetic course",
+                     "--asset-label", "Opening slide"]) == 0
+    assert seen[0]["task_label"] == "Synthetic course"
+    assert seen[0]["asset_label"] == "Opening slide"

@@ -19,6 +19,8 @@ def _parser() -> argparse.ArgumentParser:
         choices=server.ALLOWED_QUALITIES,
         default=server.DEFAULT_QUALITY,
     )
+    parser.add_argument("--task-label", help="Project or task for cost attribution")
+    parser.add_argument("--asset-label", help="Specific episode, slide, thumbnail or campaign")
     parser.add_argument("--reference", action="append", default=[])
     parser.add_argument("--max-sdk-retries", type=int, choices=(0, 1, 2), default=2)
     return parser
@@ -26,6 +28,8 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    attribution = {name: getattr(args, name) for name in ("task_label", "asset_label")
+                   if getattr(args, name) is not None}
     paths = server._generate(
         prompt=args.prompt,
         purpose=args.purpose,
@@ -33,6 +37,7 @@ def main(argv: list[str] | None = None) -> int:
         quality=args.quality,
         references=args.reference,
         max_sdk_retries=args.max_sdk_retries,
+        **attribution,
     )
     print(
         json.dumps(

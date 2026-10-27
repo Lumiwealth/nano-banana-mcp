@@ -12,6 +12,45 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import server
 
 
+def test_failed_reservation_is_not_reported_as_spend(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(server, "LEDGER_PATH", tmp_path / "usage.sqlite3")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    identifier = server._reserve("slide", "16:9")
+    server._finish(identifier, elapsed_ms=1, actual_cost_usd=None,
+                   error=RuntimeError("provider did not return usage"))
+    with server._connect() as conn:
+        assert conn.execute("SELECT actual_cost_usd FROM usage").fetchone()[0] is None
+        # Earlier versions stored the reservation as actual spend. Reporting must
+        # not silently certify that historical value, or rewrite old evidence.
+        conn.execute("UPDATE usage SET actual_cost_usd=estimated_cost_usd")
+    group = server._usage_report()["groups"][0]
+    assert group["actual_cost_usd"] is None
+    assert group["unknown_cost_requests"] == 1
+    assert group["failed_requests"] == 1
+
+
+def test_usage_report_has_exact_window_and_per_asset_attribution(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(server, "LEDGER_PATH", tmp_path / "usage.sqlite3")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    identifier = server._reserve("thumbnail", "16:9", task_label="Synthetic launch",
+                                 asset_label="Episode cover")
+    server._finish(identifier, elapsed_ms=1, actual_cost_usd=0.02, error=None,
+                   provider_request_id="req_synthetic", outputs=[{"path": "cover.png", "sha256": "abc"}])
+    with server._connect() as conn:
+        conn.execute("UPDATE usage SET created_at='2026-10-22T12:00:00+00:00'")
+    report = server._usage_report(start_time="2026-10-21T00:00:00+00:00",
+                                  end_time="2026-10-23T00:00:00+00:00", include_requests=True)
+    item = report["requests"][0]
+    assert item["task_label"] == "Synthetic launch"
+    assert item["asset_label"] == "Episode cover"
+    assert item["provider_request_id"] == "req_synthetic"
+    assert item["outputs"][0]["path"] == "cover.png"
+    assert report["groups"][0]["actual_cost_usd"] == 0.02
+    assert server._usage_report(start_time="2026-10-23T00:00:00+00:00")["groups"] == []
+
+
 def test_one_attempt_generation_records_usage_and_disables_hidden_sdk_retries(
     tmp_path, monkeypatch
 ):
@@ -31,6 +70,7 @@ def test_one_attempt_generation_records_usage_and_disables_hidden_sdk_retries(
     response = SimpleNamespace(
         data=[SimpleNamespace(b64_json=base64.b64encode(b"approved image").decode())],
         model_dump=lambda **_: {"usage": usage},
+        _request_id="req_synthetic_generation",
     )
     monkeypatch.setattr(server, "OpenAI", lambda **kwargs: (
         seen.append(kwargs)
@@ -39,6 +79,7 @@ def test_one_attempt_generation_records_usage_and_disables_hidden_sdk_retries(
     paths = server._generate(
         prompt="A useful framework", purpose="thumbnail", aspect_ratio="16:9",
         quality="low", references=[], max_sdk_retries=0,
+        task_label="Synthetic campaign", asset_label="Launch thumbnail",
     )
     assert seen == [{"api_key": "test-key", "max_retries": 0}]
     assert paths[0].read_bytes() == b"approved image"
@@ -51,6 +92,13 @@ def test_one_attempt_generation_records_usage_and_disables_hidden_sdk_retries(
         "text_input_tokens": 215, "image_input_tokens": 140, "image_output_tokens": 158,
     }
     assert row[2] == 0.006935
+    import hashlib
+    item = server._usage_report(include_requests=True)["requests"][0]
+    assert item["provider_request_id"] == "req_synthetic_generation"
+    assert item["task_label"] == "Synthetic campaign"
+    assert item["asset_label"] == "Launch thumbnail"
+    assert item["outputs"] == [{"path": str(paths[0]),
+                                "sha256": hashlib.sha256(paths[0].read_bytes()).hexdigest()}]
 
 
 @pytest.mark.parametrize("attempts", [-1, 3])
@@ -122,6 +170,8 @@ def test_schema_forbids_model_resolution_and_unbounded_quality_overrides() -> No
         "purpose",
         "aspect_ratio",
         "quality",
+        "task_label",
+        "asset_label",
     }
     assert schema["properties"]["quality"]["enum"] == ["low", "medium", "high", "xhigh", "max"]
     assert schema["properties"]["quality"]["default"] == "max"

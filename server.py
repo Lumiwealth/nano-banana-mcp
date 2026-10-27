@@ -209,6 +209,10 @@ def _connect() -> sqlite3.Connection:
         conn.execute("ALTER TABLE usage ADD COLUMN max_sdk_retries INTEGER NOT NULL DEFAULT 2")
     if "provider_usage_json" not in columns:
         conn.execute("ALTER TABLE usage ADD COLUMN provider_usage_json TEXT")
+    for name in ("task_id", "task_label", "asset_label", "source_directory",
+                 "provider_request_id", "outputs_json", "prompt_sha256"):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE usage ADD COLUMN {name} TEXT")
     if "quality" not in columns:
         conn.execute(
             "ALTER TABLE usage ADD COLUMN quality TEXT NOT NULL DEFAULT 'legacy'"
@@ -303,7 +307,8 @@ def _record_due_alerts(
 
 
 def _reserve(
-    purpose: str, aspect_ratio: str, quality: str = DEFAULT_QUALITY, *, max_sdk_retries: int = 2
+    purpose: str, aspect_ratio: str, quality: str = DEFAULT_QUALITY, *, max_sdk_retries: int = 2,
+    task_label: str | None = None, asset_label: str | None = None, prompt_sha256: str | None = None
 ) -> int:
     if type(max_sdk_retries) is not int or not 0 <= max_sdk_retries <= 2:
         raise ValueError("max_sdk_retries must be between 0 and 2")
@@ -368,7 +373,14 @@ def _reserve(
                 max_sdk_retries,
             ),
         )
-        return int(cursor.lastrowid)
+        identifier = int(cursor.lastrowid)
+        conn.execute(
+            "UPDATE usage SET task_id=?,task_label=?,asset_label=?,source_directory=?,prompt_sha256=? WHERE id=?",
+            (os.environ.get("BOTSPOT_AI_TASK_ID") or os.environ.get("CODEX_THREAD_ID")
+             or os.environ.get("CLAUDE_SESSION_ID"), task_label, asset_label, str(Path.cwd()),
+             prompt_sha256, identifier),
+        )
+        return identifier
 
 
 def _finish(
@@ -378,11 +390,13 @@ def _finish(
     actual_cost_usd: float | None,
     error: Exception | None,
     provider_usage: dict[str, int] | None = None,
+    provider_request_id: str | None = None, outputs: list[dict[str, object]] | None = None,
 ) -> None:
     with _connect() as conn:
         conn.execute(
-            "UPDATE usage SET provider_usage_json=? WHERE id=?",
-            (json.dumps(provider_usage) if provider_usage else None, reservation_id),
+            "UPDATE usage SET provider_usage_json=?,provider_request_id=?,outputs_json=? WHERE id=?",
+            (json.dumps(provider_usage) if provider_usage else None, provider_request_id,
+             json.dumps(outputs) if outputs else None, reservation_id),
         )
         if error is None:
             conn.execute(
@@ -393,60 +407,61 @@ def _finish(
         else:
             conn.execute(
                 "UPDATE usage SET status='failed', actual_cost_usd="
-                "COALESCE(?, estimated_cost_usd), elapsed_ms=?, "
+                "?, elapsed_ms=?, "
                 "error_type=? WHERE id=?",
                 (actual_cost_usd, elapsed_ms, type(error).__name__, reservation_id),
             )
 
 
-def _usage_report() -> dict[str, object]:
+def _usage_report(*, start_time: str | None = None, end_time: str | None = None,
+                  include_requests: bool = False) -> dict[str, object]:
+    filters, parameters = [], []
+    if start_time:
+        filters.append("created_at >= ?")
+        parameters.append(start_time)
+    if end_time:
+        filters.append("created_at < ?")
+        parameters.append(end_time)
+    if not filters:
+        filters.append("month = ?")
+        parameters.append(_month())
     with _connect() as conn:
-        rows = conn.execute(
-            """
-            SELECT caller, key_id, provider, purpose, model, quality, resolution, COUNT(*),
-                   ROUND(SUM(estimated_cost_usd), 4),
-                   ROUND(SUM(COALESCE(actual_cost_usd, 0)), 4)
-            FROM usage WHERE month=?
-            GROUP BY caller, key_id, provider, purpose, model, quality, resolution
-            ORDER BY caller, purpose, model, quality
-            """,
-            (_month(),),
-        ).fetchall()
-        alerts = conn.execute(
-            """
-            SELECT threshold_usd, created_at, projected_spend_usd, status
-            FROM spend_alerts WHERE month=? ORDER BY threshold_usd
-            """,
-            (_month(),),
-        ).fetchall()
-    return {
-        "month": _month(),
-        "budget_usd": _monthly_budget_usd(),
-        "groups": [
-            {
-                "caller": row[0],
-                "key_id": row[1],
-                "provider": row[2],
-                "purpose": row[3],
-                "model": row[4],
-                "quality": row[5],
-                "resolution": row[6],
-                "requests": row[7],
-                "estimated_cost_usd": row[8],
-                "actual_cost_usd": row[9],
-            }
-            for row in rows
-        ],
-        "alerts": [
-            {
-                "threshold_usd": row[0],
-                "created_at": row[1],
-                "projected_spend_usd": row[2],
-                "status": row[3],
-            }
-            for row in alerts
-        ],
-    }
+        conn.row_factory = sqlite3.Row
+        rows = [dict(row) for row in conn.execute(
+            "SELECT * FROM usage WHERE " + " AND ".join(filters) + " ORDER BY id", parameters)]
+        alerts = [dict(row) for row in conn.execute(
+            "SELECT threshold_usd,created_at,projected_spend_usd,status FROM spend_alerts WHERE month=?",
+            (_month(),))]
+    groups: dict[tuple, dict] = {}
+    for row in rows:
+        # Historical failures used the reservation as actual cost. Preserve the
+        # original row, but never certify that value without provider usage.
+        known = row["actual_cost_usd"] if row["status"] == "succeeded" or row["provider_usage_json"] else None
+        row["token_derived_cost_usd"] = known
+        row["cost_classification"] = "token_derived_estimate" if known is not None else "unknown"
+        row["outputs"] = json.loads(row.pop("outputs_json") or "[]")
+        row["provider_usage"] = json.loads(row.pop("provider_usage_json") or "null")
+        row["actual_cost_usd"] = known
+        dimensions = ("caller", "key_id", "provider", "purpose", "model", "quality", "resolution", "task_label")
+        key = tuple(row[d] for d in dimensions)
+        group = groups.setdefault(key, {**{d: row[d] for d in dimensions}, "requests": 0,
+            "succeeded_requests": 0, "failed_requests": 0, "unknown_cost_requests": 0,
+            "estimated_cost_usd": 0.0, "actual_cost_usd": None})
+        group["requests"] += 1
+        group["succeeded_requests"] += row["status"] == "succeeded"
+        group["failed_requests"] += row["status"] == "failed"
+        group["estimated_cost_usd"] += row["estimated_cost_usd"]
+        if known is None:
+            group["unknown_cost_requests"] += 1
+        else:
+            group["actual_cost_usd"] = round((group["actual_cost_usd"] or 0) + known, 6)
+    result = {"month": _month(), "start_time": start_time, "end_time": end_time,
+              "budget_usd": _monthly_budget_usd(), "groups": list(groups.values()), "alerts": alerts,
+              "cost_meaning": "Token-derived estimates, not provider invoices; reservations and unknown costs are separate.",
+              "request_count": len(rows)}
+    if include_requests:
+        result["requests"] = rows
+    return result
 
 
 def _read_reference(path_str: str) -> Path:
@@ -503,12 +518,17 @@ def _generate(
     quality: str,
     references: list[str],
     max_sdk_retries: int = 2,
+    task_label: str | None = None, asset_label: str | None = None,
 ) -> list[Path]:
-    reservation_id = _reserve(purpose, aspect_ratio, quality, max_sdk_retries=max_sdk_retries)
+    reservation_id = _reserve(purpose, aspect_ratio, quality, max_sdk_retries=max_sdk_retries,
+                              task_label=task_label, asset_label=asset_label,
+                              prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest())
     started = time.monotonic()
     error: Exception | None = None
     actual_cost_usd: float | None = None
     provider_usage: dict[str, int] | None = None
+    output_paths: list[Path] = []
+    provider_request_id: str | None = None
     try:
         client = OpenAI(api_key=_api_key(), max_retries=max_sdk_retries)
         common = {
@@ -525,6 +545,7 @@ def _generate(
                 response = client.images.edit(image=files, **common)
         else:
             response = client.images.generate(**common)
+        provider_request_id = getattr(response, "_request_id", None)
         provider_usage = _provider_usage(response)
         actual_cost_usd = _actual_cost(response)
         images = [
@@ -535,7 +556,7 @@ def _generate(
         if not images:
             raise RuntimeError("Approved generator returned no image")
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        output_paths: list[Path] = []
+        output_paths = []
         stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
         for index, data in enumerate(images, start=1):
             path = OUTPUT_DIR / f"image_{stamp}_{index}.png"
@@ -551,7 +572,9 @@ def _generate(
             elapsed_ms=int((time.monotonic() - started) * 1000),
             actual_cost_usd=actual_cost_usd,
             error=error,
-            provider_usage=provider_usage,
+            provider_usage=provider_usage, provider_request_id=provider_request_id,
+            outputs=[{"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+                     for path in output_paths],
         )
 
 
@@ -561,6 +584,8 @@ server: Server = Server("image-generator", instructions=SERVER_INSTRUCTIONS)
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     creative = {
+        "task_label": {"type": "string", "description": "Project or task this asset is for; recorded for cost attribution."},
+        "asset_label": {"type": "string", "description": "Specific asset, episode, slide or campaign name."},
         "prompt": {"type": "string", "description": "Complete image prompt."},
         "purpose": {
             "type": "string",
@@ -631,8 +656,12 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="usage_report",
-            description="Return the current calendar-month creative usage by purpose.",
-            inputSchema={"type": "object", "properties": {}, "additionalProperties": False},
+            description="Report image costs by purpose and task; optionally include per-asset requests and an exact time window. Unknown costs are explicit.",
+            inputSchema={"type": "object", "properties": {
+                "start_time": {"type": "string", "description": "Inclusive UTC ISO timestamp."},
+                "end_time": {"type": "string", "description": "Exclusive UTC ISO timestamp."},
+                "include_requests": {"type": "boolean", "default": False},
+            }, "additionalProperties": False},
         ),
     ]
 
@@ -641,7 +670,8 @@ async def list_tools() -> list[Tool]:
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     try:
         if name == "usage_report":
-            return [TextContent(type="text", text=json.dumps(_usage_report(), indent=2))]
+            return [TextContent(type="text", text=json.dumps(_usage_report(start_time=arguments.get("start_time"),
+                end_time=arguments.get("end_time"), include_requests=bool(arguments.get("include_requests"))), indent=2))]
         if name not in {"generate_image", "edit_image"}:
             raise ValueError(f"Unknown tool: {name}")
         paths = await asyncio.to_thread(
@@ -651,6 +681,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             aspect_ratio=str(arguments["aspect_ratio"]),
             quality=str(arguments.get("quality", DEFAULT_QUALITY)),
             references=list(arguments.get("reference_images") or []),
+            task_label=arguments.get("task_label"), asset_label=arguments.get("asset_label"),
         )
         text = "Generated raw approved-provider image(s):\n" + "\n".join(
             f"- {path}" for path in paths
