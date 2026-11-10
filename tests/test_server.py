@@ -122,6 +122,9 @@ def test_schema_forbids_model_resolution_and_unbounded_quality_overrides() -> No
         "purpose",
         "aspect_ratio",
         "quality",
+        "output_format",
+        "frame_count",
+        "frame_duration_ms",
     }
     assert schema["properties"]["quality"]["enum"] == ["low", "medium", "high", "xhigh", "max"]
     assert schema["properties"]["quality"]["default"] == "max"
@@ -410,3 +413,115 @@ def test_every_approved_size_is_divisible_by_sixteen() -> None:
         width, height = (int(part) for part in size.split("x"))
         assert width % 16 == 0, f"{ratio} width {width} is not divisible by 16"
         assert height % 16 == 0, f"{ratio} height {height} is not divisible by 16"
+
+
+def _gif_env(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(server, "LEDGER_PATH", tmp_path / "usage.sqlite3")
+    monkeypatch.setattr(server, "OUTPUT_DIR", tmp_path / "images")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+
+def test_gif_output_sends_documented_frame_fields_and_saves_a_gif(tmp_path, monkeypatch):
+    """Rob, 2026-11-10: Images 2.6 can return animated GIFs in the API.
+
+    OpenAI's image generation guide (read 2026-11-10): set output_format="gif"
+    on /v1/images/generations or /v1/images/edits; frame_count 2-16 (default
+    9), frame_duration_ms 20-2000 (default 200); size is each frame. The
+    provider is mocked here: tests never spend on a paid API.
+    """
+    import base64
+    from types import SimpleNamespace
+
+    _gif_env(tmp_path, monkeypatch)
+    seen = []
+    usage = {"input_tokens_details": {"text_tokens": 100, "image_tokens": 0},
+             "output_tokens_details": {"image_tokens": 1000}}
+    response = SimpleNamespace(
+        data=[SimpleNamespace(b64_json=base64.b64encode(b"GIF89a-test").decode())],
+        model_dump=lambda **_: {"usage": usage},
+    )
+    monkeypatch.setattr(server, "OpenAI", lambda **_: SimpleNamespace(
+        images=SimpleNamespace(generate=lambda **kw: seen.append(kw) or response)
+    ))
+    paths = server._generate(
+        prompt="wave and loop", purpose="thumbnail", aspect_ratio="1.91:1",
+        quality="max", references=[], output_format="gif",
+        frame_count=12, frame_duration_ms=150,
+    )
+    call = seen[0]
+    assert call["model"] == "gpt-image-2.6-sunburst"
+    assert call["output_format"] == "gif"
+    assert call["size"] == server.GIF_SIZES["1.91:1"]
+    assert call["extra_body"] == {"frame_count": 12, "frame_duration_ms": 150}
+    assert paths[0].suffix == ".gif"
+    assert paths[0].read_bytes() == b"GIF89a-test"
+    with server._connect() as conn:
+        row = conn.execute(
+            "SELECT status, resolution, estimated_cost_usd, actual_cost_usd FROM usage"
+        ).fetchone()
+    assert row[0] == "succeeded"
+    assert row[1] == server.GIF_SIZES["1.91:1"] + " gif x12"
+    assert row[2] == server.GIF_ESTIMATED_COST_USD
+    assert row[3] == 0.0305
+
+
+def test_png_requests_never_send_frame_fields(tmp_path, monkeypatch):
+    import base64
+    from types import SimpleNamespace
+
+    _gif_env(tmp_path, monkeypatch)
+    seen = []
+    response = SimpleNamespace(
+        data=[SimpleNamespace(b64_json=base64.b64encode(b"png").decode())],
+        model_dump=lambda **_: {},
+    )
+    monkeypatch.setattr(server, "OpenAI", lambda **_: SimpleNamespace(
+        images=SimpleNamespace(generate=lambda **kw: seen.append(kw) or response)
+    ))
+    paths = server._generate(
+        prompt="still", purpose="test", aspect_ratio="1:1", quality="low", references=[],
+    )
+    assert seen[0]["output_format"] == "png" and "extra_body" not in seen[0]
+    assert paths[0].suffix == ".png"
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"output_format": "webp"},
+        {"output_format": "gif", "frame_count": 1},
+        {"output_format": "gif", "frame_count": 17},
+        {"output_format": "gif", "frame_duration_ms": 10},
+        {"output_format": "gif", "frame_duration_ms": 2001},
+        {"output_format": "png", "frame_count": 9},
+    ],
+)
+def test_gif_bounds_are_enforced_before_any_spend(tmp_path, monkeypatch, kwargs):
+    _gif_env(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "OpenAI", lambda **_: pytest.fail("provider called"))
+    with pytest.raises(ValueError):
+        server._generate(
+            prompt="x", purpose="test", aspect_ratio="1:1", quality="low",
+            references=[], **kwargs,
+        )
+    assert not server.LEDGER_PATH.exists()
+
+
+def test_gif_options_are_exposed_on_both_tools_without_model_overrides() -> None:
+    tools = {tool.name: tool for tool in asyncio.run(server.list_tools())}
+    for name in ("generate_image", "edit_image"):
+        props = tools[name].inputSchema["properties"]
+        assert props["output_format"]["enum"] == ["png", "gif"]
+        assert props["output_format"]["default"] == "png"
+        assert props["frame_count"]["minimum"] == 2 and props["frame_count"]["maximum"] == 16
+        assert props["frame_duration_ms"]["minimum"] == 20
+        assert props["frame_duration_ms"]["maximum"] == 2000
+        assert "model" not in props
+
+
+def test_every_gif_size_is_divisible_by_sixteen() -> None:
+    assert set(server.GIF_SIZES) == set(server.APPROVED_SIZES)
+    for ratio, size in server.GIF_SIZES.items():
+        width, height = (int(part) for part in size.split("x"))
+        assert width % 16 == 0 and height % 16 == 0, ratio

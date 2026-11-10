@@ -32,6 +32,15 @@ Model note, 2026-11-10: OpenAI shipped GPT Image 2.6 (Flare and Sunburst) on
 2026-11-04, about 50% faster than 2.5. Rob asked to move to it the same day.
 APPROVED_MODEL is now gpt-image-2.6-sunburst.
 
+GIF note, 2026-11-10: Images 2.6 can return a finished animated GIF. OpenAI's
+image generation guide (read 2026-11-10): set output_format="gif" on
+/v1/images/generations or /v1/images/edits (edits is how still reference images
+guide the animation); frame_count 2-16 (default 9); frame_duration_ms 20-2000,
+rounded to 10 ms (default 200); size is each frame and frame count, frame size
+and n must fit the model's pixel budget. No streaming, partial images or custom
+output_compression. Billing is the normal image token rates. GIF frames use
+GIF_SIZES, half the still resolution, so a 9-frame sheet fits the budget.
+
 Auto quality and per-call model or resolution selection are deliberately
 unavailable.
 """
@@ -93,6 +102,25 @@ APPROVED_SIZES = {
     "2:3": "1024x1536",
     "3:2": "1536x1024",
 }
+# Per-frame GIF sizes: half of each still size, every side a multiple of 16.
+GIF_SIZES = {
+    "16:9": "768x432",
+    "1:1": "512x512",
+    "9:16": "432x768",
+    "1.91:1": "768x400",
+    "4:5": "512x640",
+    "2:3": "512x768",
+    "3:2": "768x512",
+}
+OUTPUT_FORMATS = ("png", "gif")
+DEFAULT_OUTPUT_FORMAT = "png"
+GIF_FRAME_COUNT_RANGE = (2, 16)
+GIF_FRAME_DURATION_MS_RANGE = (20, 2000)
+DEFAULT_GIF_FRAME_COUNT = 9
+DEFAULT_GIF_FRAME_DURATION_MS = 200
+# Conservative reservation for one animation; the ledger then records the
+# token-derived actual cost like any other call.
+GIF_ESTIMATED_COST_USD = 1.00
 # Proven impossible, do not add: the provider caps aspect ratio at 3:1, so
 # Google's 4:1 landscape logo slot cannot be generated natively. We do not
 # generate logos anyway (house rule: never invent a logo mark).
@@ -306,8 +334,33 @@ def _record_due_alerts(
             )
 
 
+def _validate_output(
+    output_format: str, frame_count: int | None, frame_duration_ms: int | None
+) -> None:
+    if output_format not in OUTPUT_FORMATS:
+        raise ValueError(f"output_format must be one of {OUTPUT_FORMATS}")
+    if output_format != "gif":
+        if frame_count is not None or frame_duration_ms is not None:
+            raise ValueError("frame_count and frame_duration_ms are only for gif output")
+        return
+    low, high = GIF_FRAME_COUNT_RANGE
+    if frame_count is not None and (type(frame_count) is not int or not low <= frame_count <= high):
+        raise ValueError(f"frame_count must be an integer from {low} to {high}")
+    low, high = GIF_FRAME_DURATION_MS_RANGE
+    if frame_duration_ms is not None and (
+        type(frame_duration_ms) is not int or not low <= frame_duration_ms <= high
+    ):
+        raise ValueError(f"frame_duration_ms must be an integer from {low} to {high}")
+
+
 def _reserve(
-    purpose: str, aspect_ratio: str, quality: str = DEFAULT_QUALITY, *, max_sdk_retries: int = 2
+    purpose: str,
+    aspect_ratio: str,
+    quality: str = DEFAULT_QUALITY,
+    *,
+    max_sdk_retries: int = 2,
+    output_format: str = DEFAULT_OUTPUT_FORMAT,
+    frame_count: int = DEFAULT_GIF_FRAME_COUNT,
 ) -> int:
     if type(max_sdk_retries) is not int or not 0 <= max_sdk_retries <= 2:
         raise ValueError("max_sdk_retries must be between 0 and 2")
@@ -317,7 +370,12 @@ def _reserve(
         raise ValueError(f"aspect_ratio must be one of {ASPECT_RATIOS}")
     if quality not in ALLOWED_QUALITIES:
         raise ValueError(f"quality must be one of {ALLOWED_QUALITIES}")
-    estimated_cost = ESTIMATED_COST_USD_BY_QUALITY[quality]
+    if output_format == "gif":
+        estimated_cost = GIF_ESTIMATED_COST_USD
+        resolution = f"{GIF_SIZES[aspect_ratio]} gif x{frame_count}"
+    else:
+        estimated_cost = ESTIMATED_COST_USD_BY_QUALITY[quality]
+        resolution = APPROVED_SIZES[aspect_ratio]
     with _connect() as conn:
         conn.execute("BEGIN IMMEDIATE")
         one_minute_ago = datetime.fromtimestamp(time.time() - 60, UTC).isoformat()
@@ -366,7 +424,7 @@ def _reserve(
                 _key_id(),
                 APPROVED_MODEL,
                 quality,
-                APPROVED_SIZES[aspect_ratio],
+                resolution,
                 aspect_ratio,
                 estimated_cost,
                 max_sdk_retries,
@@ -507,8 +565,25 @@ def _generate(
     quality: str,
     references: list[str],
     max_sdk_retries: int = 2,
+    output_format: str = DEFAULT_OUTPUT_FORMAT,
+    frame_count: int | None = None,
+    frame_duration_ms: int | None = None,
 ) -> list[Path]:
-    reservation_id = _reserve(purpose, aspect_ratio, quality, max_sdk_retries=max_sdk_retries)
+    _validate_output(output_format, frame_count, frame_duration_ms)
+    is_gif = output_format == "gif"
+    if is_gif:
+        frame_count = DEFAULT_GIF_FRAME_COUNT if frame_count is None else frame_count
+        frame_duration_ms = (
+            DEFAULT_GIF_FRAME_DURATION_MS if frame_duration_ms is None else frame_duration_ms
+        )
+    reservation_id = _reserve(
+        purpose,
+        aspect_ratio,
+        quality,
+        max_sdk_retries=max_sdk_retries,
+        output_format=output_format,
+        frame_count=frame_count or DEFAULT_GIF_FRAME_COUNT,
+    )
     started = time.monotonic()
     error: Exception | None = None
     actual_cost_usd: float | None = None
@@ -519,9 +594,15 @@ def _generate(
             "model": APPROVED_MODEL,
             "prompt": prompt,
             "quality": quality,
-            "size": APPROVED_SIZES[aspect_ratio],
-            "output_format": "png",
+            "size": GIF_SIZES[aspect_ratio] if is_gif else APPROVED_SIZES[aspect_ratio],
+            "output_format": output_format,
         }
+        if is_gif:
+            # The 3.8 SDK predates these fields, so they travel in the body.
+            common["extra_body"] = {
+                "frame_count": frame_count,
+                "frame_duration_ms": frame_duration_ms,
+            }
         if references:
             paths = [_read_reference(path) for path in references]
             with ExitStack() as stack:
@@ -542,7 +623,7 @@ def _generate(
         output_paths: list[Path] = []
         stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
         for index, data in enumerate(images, start=1):
-            path = OUTPUT_DIR / f"image_{stamp}_{index}.png"
+            path = OUTPUT_DIR / f"image_{stamp}_{index}.{output_format}"
             path.write_bytes(data)
             output_paths.append(path)
         return output_paths
@@ -591,6 +672,28 @@ async def list_tools() -> list[Tool]:
                 "time. auto is unavailable."
             ),
         },
+        "output_format": {
+            "type": "string",
+            "enum": list(OUTPUT_FORMATS),
+            "default": DEFAULT_OUTPUT_FORMAT,
+            "description": (
+                "png (default) for a still, or gif for a finished looping animation. "
+                "For a loop, describe a start pose the subject returns to and keep "
+                "the camera still. GIF frames are half the still resolution."
+            ),
+        },
+        "frame_count": {
+            "type": "integer",
+            "minimum": GIF_FRAME_COUNT_RANGE[0],
+            "maximum": GIF_FRAME_COUNT_RANGE[1],
+            "description": "GIF only. Number of frames, default 9.",
+        },
+        "frame_duration_ms": {
+            "type": "integer",
+            "minimum": GIF_FRAME_DURATION_MS_RANGE[0],
+            "maximum": GIF_FRAME_DURATION_MS_RANGE[1],
+            "description": "GIF only. Milliseconds per frame, default 200.",
+        },
     }
     return [
         Tool(
@@ -601,7 +704,7 @@ async def list_tools() -> list[Tool]:
                 "to max; lower tiers are for throwaway drafts only. Auto "
                 "quality and model or resolution overrides are unavailable. "
                 "The raw result is saved "
-                "without edits."
+                "without edits. Set output_format=gif for a looping animated GIF."
             ),
             inputSchema={
                 "type": "object",
@@ -616,7 +719,8 @@ async def list_tools() -> list[Tool]:
                 "Regenerate an image from references using the same approved, "
                 "server-controlled GPT Image 2.6 Sunburst generator. Max is the default; "
                 "lower tiers are for throwaway drafts only and auto is "
-                "unavailable. The result is not hand-repaired."
+                "unavailable. The result is not hand-repaired. Set output_format=gif "
+                "to animate the references into a looping GIF."
             ),
             inputSchema={
                 "type": "object",
@@ -655,6 +759,9 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             aspect_ratio=str(arguments["aspect_ratio"]),
             quality=str(arguments.get("quality", DEFAULT_QUALITY)),
             references=list(arguments.get("reference_images") or []),
+            output_format=str(arguments.get("output_format", DEFAULT_OUTPUT_FORMAT)),
+            frame_count=arguments.get("frame_count"),
+            frame_duration_ms=arguments.get("frame_duration_ms"),
         )
         text = "Generated raw approved-provider image(s):\n" + "\n".join(
             f"- {path}" for path in paths
