@@ -133,7 +133,7 @@ def test_schema_forbids_model_resolution_and_unbounded_quality_overrides() -> No
 
 
 def test_only_approved_gpt_image_model_and_fixed_sizes_exist() -> None:
-    assert server.APPROVED_MODEL == "gpt-image-2.5-sunburst"
+    assert server.APPROVED_MODEL == "gpt-image-2.6-sunburst"
     assert server.DEFAULT_QUALITY == "max"
     assert server.ALLOWED_QUALITIES == ("low", "medium", "high", "xhigh", "max")
     # This set is a deliberate allowlist, not a default. It exists so an agent
@@ -159,7 +159,7 @@ def test_tool_descriptions_match_the_effective_model_and_quality_contract() -> N
     tools = {tool.name: tool for tool in asyncio.run(server.list_tools())}
     for name in ("generate_image", "edit_image"):
         description = tools[name].description
-        assert "GPT Image 2.5 Sunburst" in description
+        assert "GPT Image 2.6 Sunburst" in description
         assert "Flare" not in description
         assert "medium is the only allowed upgrade" not in description
         assert "auto" in description.lower()

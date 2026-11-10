@@ -39,7 +39,7 @@ def test_cli_locks_model_resolution_and_defaults_to_max(tmp_path, monkeypatch, c
         "references": [],
         "max_sdk_retries": 2,
     }
-    assert payload["model"] == "gpt-image-2.5-sunburst"
+    assert payload["model"] == "gpt-image-2.6-sunburst"
     assert payload["resolution"] == "1536x864"
 
 

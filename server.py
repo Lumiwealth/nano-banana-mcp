@@ -28,6 +28,10 @@ founder-likeness ad creative. Note the dated snapshot
 `gpt-image-2.5-sunburst-2026-09-08` was still 403 at the time of the change
 while the unversioned alias worked, so the alias is pinned here.
 
+Model note, 2026-11-10: OpenAI shipped GPT Image 2.6 (Flare and Sunburst) on
+2026-11-04, about 50% faster than 2.5. Rob asked to move to it the same day.
+APPROVED_MODEL is now gpt-image-2.6-sunburst.
+
 Auto quality and per-call model or resolution selection are deliberately
 unavailable.
 """
@@ -53,7 +57,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 from openai import OpenAI
 
-APPROVED_MODEL = "gpt-image-2.5-sunburst"
+APPROVED_MODEL = "gpt-image-2.6-sunburst"
 DEFAULT_QUALITY = "max"
 ALLOWED_QUALITIES = ("low", "medium", "high", "xhigh", "max")
 SERVER_INSTRUCTIONS = (
@@ -583,7 +587,7 @@ async def list_tools() -> list[Tool]:
                 "beside what one send or one ad click costs, and low is specifically "
                 "weak at small on-screen text and close-up faces. Choose a lower tier "
                 "only for a throwaway draft where speed matters. Price is identical "
-                "across qualities on both 2.5 models, so the only cost of max is "
+                "across qualities on the 2.5 models, so the only cost of max is "
                 "time. auto is unavailable."
             ),
         },
@@ -593,7 +597,7 @@ async def list_tools() -> list[Tool]:
             name="generate_image",
             description=(
                 "Generate one image using the approved server-controlled provider, "
-                "GPT Image 2.5 Sunburst model, and exact resolution. Quality defaults "
+                "GPT Image 2.6 Sunburst model, and exact resolution. Quality defaults "
                 "to max; lower tiers are for throwaway drafts only. Auto "
                 "quality and model or resolution overrides are unavailable. "
                 "The raw result is saved "
@@ -610,7 +614,7 @@ async def list_tools() -> list[Tool]:
             name="edit_image",
             description=(
                 "Regenerate an image from references using the same approved, "
-                "server-controlled GPT Image 2.5 Sunburst generator. Max is the default; "
+                "server-controlled GPT Image 2.6 Sunburst generator. Max is the default; "
                 "lower tiers are for throwaway drafts only and auto is "
                 "unavailable. The result is not hand-repaired."
             ),
